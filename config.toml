@@ -1,0 +1,25 @@
+[debate]
+max_rounds = 3
+
+[lmstudio]
+timeout_seconds = 600
+
+[providers.local]
+base_url = "http://localhost:1234/v1"
+api_key = "lm-studio"
+is_local = true
+
+[agents.author]
+provider = "local"
+model = ""
+temperature = 0.4
+
+[agents.adversary]
+provider = "local"
+model = ""
+temperature = 0.7
+
+[agents.mediator]
+provider = "local"
+model = ""
+temperature = 0.2
