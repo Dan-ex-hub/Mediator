@@ -19,6 +19,67 @@ _HEADER_RE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
+# Adversary-lens findings (Phase 19).
+NO_ISSUES_LENS_TOKEN = "NO_ISSUES"
+SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+_SEVERITY_ALIASES = {
+    "CRITICAL": "CRITICAL", "CRIT": "CRITICAL", "BLOCKER": "CRITICAL",
+    "HIGH": "HIGH", "SEVERE": "HIGH", "MAJOR": "HIGH",
+    "MEDIUM": "MEDIUM", "MED": "MEDIUM", "MODERATE": "MEDIUM",
+    "LOW": "LOW", "MINOR": "LOW", "INFO": "LOW",
+}
+
+
+@dataclass
+class Finding:
+    category: str   # SECURITY | SPEC | LOGIC
+    severity: str   # CRITICAL | HIGH | MEDIUM | LOW
+    title: str
+    where: str = ""
+    detail: str = ""
+    fix: str = ""
+
+    def to_dict(self) -> dict:
+        return {"category": self.category, "severity": self.severity, "title": self.title,
+                "where": self.where, "detail": self.detail, "fix": self.fix}
+
+
+def _norm_severity(text: str) -> str | None:
+    key = re.sub(r"[^A-Za-z]", "", text or "").upper()
+    return _SEVERITY_ALIASES.get(key)
+
+
+def parse_findings(text: str, category: str) -> list[Finding]:
+    """Parse an adversary lens's pipe-delimited findings (lenient).
+
+    Each finding line is ``SEVERITY | TITLE | WHERE | DETAIL | FIX``. Lines that don't start
+    with a recognizable severity (e.g. a header row or prose) are skipped. The raw text is
+    retained by the caller, so nothing is lost even if parsing yields fewer fields.
+    """
+    if not text:
+        return []
+    findings: list[Finding] = []
+    for raw in text.splitlines():
+        line = raw.strip().lstrip("->*•·").strip()
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        severity = _norm_severity(cells[0])
+        if severity is None:  # header row or non-finding line
+            continue
+        title = cells[1] if len(cells) > 1 else ""
+        where = cells[2] if len(cells) > 2 else ""
+        detail = cells[3] if len(cells) > 3 else ""
+        fix = cells[4] if len(cells) > 4 else ""
+        if not title and not detail:
+            continue
+        findings.append(Finding(category, severity, title, where, detail, fix))
+    return findings
+
+
+def sort_findings(findings: list[Finding]) -> list[Finding]:
+    return sorted(findings, key=lambda f: SEVERITY_ORDER.get(f.severity, 9))
+
 
 @dataclass
 class MediatorResult:

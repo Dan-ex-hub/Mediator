@@ -146,6 +146,144 @@ generation without cross-file revision.
 
 ---
 
+## Phase 12 — Diff & Apply  ✅ DONE
+**Goal:** turn the Mediator's `FINAL_CODE` from "copy this manually" into a reviewable edit.
+
+- The web UI renders an **apply card** after any review that produced `FINAL_CODE`
+  (file *and* folder scope). "View diff" opens a Monaco side-by-side diff (original vs
+  proposed, proposed side editable); "Apply" writes the file via the CSRF-protected
+  `/api/save`, updates the open editor tab, and refreshes the tree.
+- For folder review each per-file result gets its own apply card targeting that file.
+- CLI parity: `review --apply` overwrites the reviewed file with `FINAL_CODE` (opt-in only).
+
+**Done when:** a review can be applied to disk as a diff-reviewed change without copy/paste.
+✅ Verified (server serves the diff UI; JS passes `node --check`; apply round-trips through
+`/api/save`).
+
+**Next:** multi-file *debated edits* (propose coordinated changes across existing files,
+not just one file or a greenfield project), and closing the verify loop (run approved
+commands and feed output back for a grounded Mediator follow-up).
+
+## Phase 13 — Multi-file Debated Edits  ✅ DONE
+**Goal:** "change X across my project" — coordinated, debated edits to EXISTING files,
+not just a one-file review or a greenfield build.
+
+Protocol (`mediator/edits.py`, every code-emitting step returns one file in one block):
+1. **Planner** (mediator tier) picks the minimal set of files to modify/create as a JSON
+   plan; paths are normalized and workspace-escape paths are rejected.
+2. **Author** drafts the full new content of each planned file, given the request, the
+   plan, the file's current content, and truncated context from the sibling target files.
+3. **Adversary** critiques the WHOLE change set at once — security, requirement
+   compliance, and cross-file issues (broken calls, inconsistent interfaces, missing wiring).
+4. **Mediator** finalizes each file with final authority, applying the valid critique.
+5. A short change-set **report** (verdict + summary + residual risks) closes it out.
+
+- `/api/edit/stream` streams plan → per-file draft → critique → per-file final → report.
+  Each finalized file is delivered with its original + final content, so the Phase 12
+  diff/apply UI renders a per-file diff; an **Apply all** button writes the whole set.
+- New "Edit" scope in the web UI. Cost is bounded (2·files + 3 calls) and the file count
+  is capped.
+
+**Done when:** a project-wide change request yields debated, per-file diffs the user can
+review and apply. ✅ Verified (end-to-end orchestration with mocked agents produces the
+full plan→draft→critique→finalize→report→done sequence; diffs carry correct per-file
+original/final; paths that escape the workspace are rejected).
+
+**Next:** close the verify loop (run approved commands and feed output back for a grounded
+Mediator follow-up).
+
+## Phase 14 — Closing the Verify Loop  ✅ DONE
+**Goal:** make verification *grounded* — feed the real output of approved commands back to
+the agents instead of stopping at "here are commands to run."
+
+- The approval card now **captures** each command's stdout/stderr and exit code as the
+  user runs it (`runTermCommand` returns `{command, output, code}`), still gated by the
+  same one-click / destructive-confirm rules.
+- An **"Assess results with the agents"** button (enabled once a command has run) posts the
+  collected results to `/api/verify/assess`.
+- `verify.assess_results` builds a Mediator prompt from the request, the code, and the
+  actual command output (truncated), and returns a grounded assessment:
+  `GROUNDED_VERDICT` / `EVIDENCE` (tied to quoted output) / `REMAINING_CONCERNS`.
+- The loop stays human-in-the-loop: nothing runs without a click, and the assessment only
+  uses output the user chose to produce.
+
+**Done when:** the user runs the proposed checks and the Mediator returns a verdict grounded
+in their real output. ✅ Verified (the assessment prompt carries each command, its output,
+and exit code; endpoint is CSRF-guarded and rejects empty result sets; JS passes `node --check`).
+
+## Phase 15 — Codebase Index (retrieval)  ✅ DONE
+**Goal:** find the right files in a large repo instead of walking the first N.
+
+- `mediator/index.py`: a dependency-free **BM25** index over the workspace's code files.
+  Tokenizes identifiers and splits camelCase / snake_case subwords; fully local, no
+  embedding model required.
+- `/api/search/semantic?q=` ranks files by relevance; `/api/index/refresh` rebuilds it.
+  The index is cached per workspace root and invalidated on open/save.
+- Multi-file **Edit** now selects candidate files by BM25 relevance to the request (falling
+  back to a walk), so project-wide edits scale to real repos.
+
+**Done when:** a query returns the most relevant files. ✅ Verified (BM25 ranks the auth
+file top for "password login").
+
+## Phase 16 — Agent Tool Use  ✅ DONE
+**Goal:** let agents inspect the workspace instead of guessing.
+
+- `mediator/tools.py`: provider-agnostic tool calling. The agent emits a small JSON object
+  ({"action":"read_file"|"list_dir"|"search"|"answer"}); a bounded ReAct loop runs the tool
+  and feeds the observation back. All tools are READ-ONLY and sandboxed to the workspace
+  root (path-escape attempts are rejected), so an agent can gather context but never modify
+  or escape the workspace.
+
+**Done when:** an agent can read/search files mid-answer. ✅ Verified (loop executes a
+read_file tool call then finalizes; sandbox blocks `../` escapes).
+
+## Phase 17 — Continuous Assistant Chat + Token Streaming  ✅ DONE
+**Goal:** a real conversational assistant that streams and remembers.
+
+- `LLMClient.chat_stream` adds OpenAI-compatible `stream: true` token streaming.
+- New **Ask** scope + `/api/chat/stream`: a continuous assistant (mediator tier) that keeps
+  conversation history (client-maintained), uses the Phase 16 tools to ground answers in
+  the codebase, then streams the final answer token-by-token. Tool steps surface as live
+  "🔧 read_file …" lines in the chat.
+
+**Done when:** the user can hold a streamed, codebase-aware conversation. ✅ Verified
+(end-to-end: a tool call then streamed tokens assemble the final answer; history round-trips).
+
+## Phase 18 — Git Integration  ✅ DONE
+**Goal:** source control from inside the IDE.
+
+- `mediator/gitops.py`: a SAFE git CLI wrapper (status, diff, stage/unstage, commit, branch
+  create/checkout, log, push with `-u`). No force pushes, hard resets, or cleans by design;
+  `current_branch` handles unborn HEAD (fresh repos).
+- `/api/git/*` endpoints (mutations CSRF-guarded) and a **Source Control** activity panel:
+  branch display, changed-file list with per-file stage/unstage, click-to-view unified diff
+  in chat, commit message + commit, new branch, and push (with an upstream prompt).
+
+**Done when:** the user can stage, commit, branch, and push from the UI. ✅ Verified
+(read-only ops against the live repo; empty-repo status handled; mutations require a token).
+
+## Phase 19 — Three-Lens Adversary  ✅ DONE
+**Goal:** replace one vague "attack" with three sharp, focused review passes.
+
+- The Adversary is now three agents, each with a tight system prompt:
+  **Security** (injection, auth, crypto misuse, secrets), **Spec-compliance** (does it do
+  what was asked), and **Logic/edge-case** (off-by-one, null handling, concurrency).
+- All three share one machine-readable finding contract:
+  `SEVERITY | TITLE | WHERE | DETAIL | FIX`. `parsing.parse_findings` turns each lens's
+  output into structured `Finding` records (lenient; raw text is always retained).
+- The Orchestrator runs the three lenses per round, emits a grouped/severity-sorted
+  `findings` event (rendered as a color-coded table in the UI), stops early only when ALL
+  lenses are clear, and feeds the Author and Mediator the findings GROUPED BY CATEGORY.
+- The Mediator now weighs findings by category (security → spec → logic) instead of a
+  free-form debate blob. Each lens inherits the `adversary` provider/model unless given its
+  own `[agents.adversary_*]` block, so the split costs nothing to configure.
+
+**Done when:** the adversary produces structured, per-category findings and the Mediator
+resolves them by category. ✅ Verified (a mocked 3-lens debate emits SECURITY/SPEC/LOGIC
+turns, a grouped findings event with correct counts and severity ordering, and a
+category-weighed Mediator verdict; the findings parser handles header rows, NO_ISSUES, and
+severity sorting; JS passes `node --check`).
+
 ## Cross-cutting concerns
 - **Safety:** sandbox isolation, explicit opt-in for execution, confirmation for
   destructive actions, never run untrusted generated code on the host.

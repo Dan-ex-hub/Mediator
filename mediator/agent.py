@@ -58,20 +58,13 @@ def build_agent(config: Config, role: str) -> Agent:
 
 
 def build_prompt_engineer(config: Config) -> Agent:
-    """The Prompt Engineer reuses the Mediator's provider/model (the strongest role).
+    """The Prompt Engineer agent.
 
-    It has no dedicated config block by default, so borrowing the Mediator's endpoint
-    keeps it working in Privacy, Reasoning, and Hybrid modes alike.
+    Configurable via an ``[agents.prompt_engineer]`` block; if absent it inherits the
+    Mediator's provider/model (the strongest role) through config role-fallback, so it
+    keeps working in Privacy, Reasoning, Hybrid, and per-agent setups alike.
     """
-    client, model = client_for_role(config, "mediator")
-    return Agent(
-        role="prompt_engineer",
-        system_prompt=ROLE_PROMPTS["prompt_engineer"],
-        client=client,
-        model=model,
-        temperature=0.3,
-        profile=profile_for(model),
-    )
+    return build_agent(config, "prompt_engineer")
 
 
 def refine_prompt(config: Config, raw_request: str) -> str:

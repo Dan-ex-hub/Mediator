@@ -7,7 +7,8 @@ cases, ``/v1/models``. Only the ``base_url`` and ``api_key`` differ.
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, Iterator
 
 import httpx
 
@@ -99,6 +100,66 @@ class LLMClient:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Unexpected response shape from {self.label}: {data}") from exc
+
+    def chat_stream(self, messages: list[dict[str, str]], model: str = "",
+                    temperature: float = 0.5) -> Iterator[str]:
+        """Yield content deltas as the model produces them (token-level streaming).
+
+        Uses the OpenAI-compatible ``stream: true`` SSE protocol, which LM Studio and
+        the major cloud providers all support.
+        """
+        if not model:
+            available = self.list_models()
+            if not available:
+                raise LLMError(
+                    f"No model available from {self.label}. "
+                    "Load a model in LM Studio, or set a model name in config.toml."
+                )
+            model = available[0]
+
+        url = f"{self.base_url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        try:
+            with httpx.stream("POST", url, json=payload, headers=self._headers(),
+                              timeout=self.timeout_seconds) as resp:
+                if resp.status_code >= 400:
+                    body = resp.read().decode("utf-8", "replace")
+                    if resp.status_code in (401, 403):
+                        body = "Authentication failed — check the API key for this provider."
+                    raise LLMError(f"{self.label} returned HTTP {resp.status_code}: {body}")
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        line = line[5:].strip()
+                    if line == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    try:
+                        delta = obj["choices"][0].get("delta", {}).get("content")
+                    except (KeyError, IndexError, TypeError):
+                        delta = None
+                    if delta:
+                        yield delta
+        except httpx.ConnectError as exc:
+            raise LLMError(
+                f"Could not connect to {self.label} at {self.base_url}. "
+                "Is the server running / the base_url correct?"
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise LLMError(
+                f"{self.label} did not respond within {self.timeout_seconds}s."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Streaming request to {url} failed: {exc}") from exc
 
 
 def make_client(provider: ProviderConfig, timeout_seconds: float, label: str) -> LLMClient:

@@ -68,12 +68,35 @@ class DebateLog:
             for t in self.turns
         ]
 
-    def transcript_text(self) -> str:
-        """Render the whole debate as plain text (for feeding back to agents)."""
-        parts = []
-        for t in self.turns:
-            parts.append(f"--- {t.role.upper()} (round {t.round}) ---\n{t.content}")
-        return "\n\n".join(parts)
+    def transcript_text(self, max_chars: int | None = None) -> str:
+        """Render the debate as plain text (for feeding back to agents).
+
+        When ``max_chars`` is given, keep the most recent turns that fit within that
+        budget so long debates don't overflow a model's context window. A single
+        oversized turn is itself truncated, and a marker notes any omitted turns.
+        """
+        parts = [
+            f"--- {t.role.upper()} (round {t.round}) ---\n{t.content}"
+            for t in self.turns
+        ]
+        if max_chars is None or not parts:
+            return "\n\n".join(parts)
+
+        kept: list[str] = []
+        total = 0
+        for part in reversed(parts):
+            if len(part) > max_chars:
+                part = part[:max_chars] + "\n…[turn truncated to fit context]…"
+            if kept and total + len(part) > max_chars:
+                break
+            kept.append(part)
+            total += len(part)
+        kept.reverse()
+        text = "\n\n".join(kept)
+        omitted = len(parts) - len(kept)
+        if omitted > 0:
+            text = f"[…{omitted} earlier turn(s) omitted to fit context…]\n\n" + text
+        return text
 
     def to_markdown(self, meta: dict[str, str] | None = None) -> str:
         """Render the full debate as a standalone markdown document."""

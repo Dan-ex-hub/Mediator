@@ -13,8 +13,8 @@ Single-model code review tends to be agreeable and shallow. It rarely pushes bac
 | Agent | Role | Goal |
 |-------|------|------|
 | **Agent A — Author** | Writes / proposes the code | Produce a working implementation and defend design choices |
-| **Agent B — Adversary** | Attacks the code | Find security holes first, then verify the code does what the user actually asked; also logic & edge cases |
-| **Agent C — Mediator** | Senior reviewer | Weigh both sides, resolve disagreements, produce the final reviewed version |
+| **Agent B — Adversary** | Attacks the code through three focused lenses | A **Security** lens (injection, auth, crypto misuse), a **Spec** lens (does it do what was asked), and a **Logic/edge-case** lens (off-by-one, null handling, concurrency) — each returns structured findings |
+| **Agent C — Mediator** | Senior reviewer | Weigh the findings by category, resolve disagreements, produce the final reviewed version |
 
 The agents run in a loop for a configurable number of rounds. Every message in the debate is logged and shown to the developer, so you see *why* the final code looks the way it does — not just the result.
 
@@ -58,6 +58,42 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the detailed design and [`IMPLEME
 
 ---
 
+## Features
+
+Everything below works from the web IDE (`python -m mediator web`), and the core review also works from the command line.
+
+**Reviewing code**
+- **Debate review** — three agents (Author, Adversary, Mediator) argue over a file and hand you a final, reconciled version with a clear verdict.
+- **Three-lens adversary** — instead of one vague "attack," the Adversary runs three focused passes: a **Security** lens, a **Spec-compliance** lens, and a **Logic/edge-case** lens. Each returns structured findings (severity, location, fix) that show up as a color-coded table, and the Mediator weighs them by category.
+- **Folder review** — review every code file in a project, then get one overall project report.
+- **Live debate** — watch each agent's turn appear in real time instead of waiting for the end.
+- **Diff & apply** — the final code shows up as a side-by-side diff you can edit and apply straight to the file (no copy/paste). The terminal version has a `review --apply` flag.
+
+**Changing & building code**
+- **Multi-file edits** — describe a change like "add logging to every API route" and the agents plan it, write each file, critique the whole set, and finalize it. You review each change as a diff and apply one file or all at once.
+- **Build an app** — describe an app and it plans the project, writes the files, and proposes the commands to install and run it.
+
+**Asking & exploring**
+- **Ask (chat)** — a normal back-and-forth chat about your codebase. It reads and searches your actual files to answer, remembers the conversation, and streams its reply word by word.
+- **Code search** — fast keyword search plus a smarter "find the most relevant files" search across the project.
+
+**Running & verifying**
+- **Built-in terminal** — run commands in your workspace, with live output.
+- **Verify loop** — the agents suggest safe checks to run (tests, linters). You run them with one click, and the agents then read the real output and give you a grounded verdict. Risky commands are flagged and need an extra confirmation; nothing runs on its own.
+
+**Source control**
+- **Git panel** — see changed files, view diffs, stage/unstage, commit, create branches, and push — all from the sidebar.
+
+**Privacy & setup**
+- **Local, cloud, or hybrid** — run every agent on your own machine via LM Studio, in the cloud, or mix the two. A privacy notice appears whenever code would leave your machine.
+- **Per-agent cloud models** — give each agent (Prompt Engineer, Author, Adversary, Mediator) its own cloud provider, model, and API key. Local too slow? Put the heavy roles on a fast cloud model and keep the rest local. Supports OpenAI, OpenRouter, Groq, DeepSeek, Together, or any custom OpenAI-compatible endpoint. Keys are stored in a gitignored `secrets.toml`, never in `config.toml`.
+- **Model profiles** — each agent automatically gets prompts in the style its model prefers (e.g. XML for Claude, markdown for others).
+- **Saved transcripts** — every debate is saved to `logs/` as a readable markdown file.
+
+> Safety: the web server stays on `127.0.0.1`, all actions that change files or run commands require a click, and write requests are protected against cross-site requests.
+
+---
+
 ## Requirements
 
 - **Python 3.10+**.
@@ -79,6 +115,8 @@ python -m mediator setup
 #    [1] Privacy    - 100% local via LM Studio (code never leaves your machine)
 #    [2] Reasoning  - all agents use a cloud model (faster, stronger)
 #    [3] Hybrid     - Author + Adversary local, Mediator in the cloud
+#    [4] Per-agent  - give EACH agent its own provider + model + API key
+#                     (best when local models are too slow)
 
 # 3. Verify the connection
 python -m mediator ping

@@ -32,6 +32,20 @@ class ConfigError(ValueError):
     """Raised when configuration is present but invalid."""
 
 
+# Roles that don't need their own config block: they inherit a sensible primary agent's
+# provider/model so configuring the core agents (incl. on the cloud) covers everything.
+ROLE_FALLBACKS: dict[str, str] = {
+    "prompt_engineer": "mediator",
+    "assistant": "mediator",
+    "architect": "mediator",
+    "verifier": "adversary",
+    "builder": "author",
+    "adversary_security": "adversary",
+    "adversary_spec": "adversary",
+    "adversary_logic": "adversary",
+}
+
+
 @dataclass
 class ProviderConfig:
     base_url: str = "http://localhost:1234/v1"
@@ -61,7 +75,12 @@ class Config:
     timeout_seconds: float = 120.0
 
     def agent(self, role: str) -> AgentConfig:
-        return self.agents.get(role, AgentConfig())
+        if role in self.agents:
+            return self.agents[role]
+        fallback = ROLE_FALLBACKS.get(role)
+        if fallback and fallback in self.agents:
+            return self.agents[fallback]
+        return AgentConfig()
 
     def provider_for(self, role: str) -> ProviderConfig:
         name = self.agent(role).provider

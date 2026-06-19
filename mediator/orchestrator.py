@@ -13,18 +13,54 @@ Protocol (see ARCHITECTURE.md):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from .agent import build_agent
 from .config import Config
 from .debate_log import DebateLog
-from .parsing import MediatorResult, parse_mediator
+from .parsing import (Finding, MediatorResult, parse_findings, parse_mediator,
+                      sort_findings)
 from .util import extract_last_code_block
 
 NO_ISSUES_TOKEN = "NO_CRITICAL_ISSUES"
 
+# The Adversary is split into three focused lenses (Phase 19). Each is its own agent role
+# that inherits the `adversary` provider/model unless separately configured, and each
+# returns structured findings the Mediator weighs BY CATEGORY.
+LENSES: list[tuple[str, str]] = [
+    ("SECURITY", "adversary_security"),
+    ("SPEC", "adversary_spec"),
+    ("LOGIC", "adversary_logic"),
+]
+
+# Cap how much debate history is fed back into each agent prompt. Long files plus
+# multi-round history can overflow a small local model's context window; we keep the
+# most recent turns within this budget (see DebateLog.transcript_text).
+TRANSCRIPT_CHAR_BUDGET = 16000
+
 EventCb = Callable[[dict], None] | None
+
+
+def _count_by_category(findings: list[Finding]) -> dict[str, int]:
+    counts = {cat: 0 for cat, _ in LENSES}
+    for f in findings:
+        counts[f.category] = counts.get(f.category, 0) + 1
+    return counts
+
+
+def adversary_conceded(reply: str) -> bool:
+    """True only if the Adversary emitted NO_CRITICAL_ISSUES as its own statement.
+
+    A plain substring check is too loose — the token can appear inside a sentence
+    (e.g. "this is not a NO_CRITICAL_ISSUES case"). Require it to lead a line, after
+    stripping markdown emphasis/list/quote decoration.
+    """
+    for line in reply.splitlines():
+        cleaned = line.strip().lstrip(">*-#").strip().strip("*`_ ").strip()
+        if cleaned.upper().startswith(NO_ISSUES_TOKEN):
+            return True
+    return False
 
 
 def summarize_project(config: Config, file_results: list[dict]) -> str:
@@ -61,6 +97,7 @@ class DebateResult:
     rounds_run: int
     stopped_early: bool
     mediator: MediatorResult | None = None
+    findings: list[Finding] = field(default_factory=list)
 
 
 class Orchestrator:
@@ -68,9 +105,11 @@ class Orchestrator:
         self.config = config
         self.log = log
         self.author = build_agent(config, "author")
-        self.adversary = build_agent(config, "adversary")
+        # Three focused adversary lenses instead of one vague "attack".
+        self.lenses = [(cat, build_agent(config, role)) for cat, role in LENSES]
         self.mediator = build_agent(config, "mediator")
         self.max_rounds = config.max_rounds
+        self.transcript_budget = TRANSCRIPT_CHAR_BUDGET
 
     # -- context builders -------------------------------------------------
     def _code_block(self, code: str, language: str) -> str:
@@ -86,39 +125,53 @@ class Orchestrator:
             "code block."
         )
 
-    def _adversary_turn(self, task: str, filename: str, current_code: str,
-                        language: str) -> str:
+    def _transcript(self) -> str:
+        return self.log.transcript_text(max_chars=self.transcript_budget)
+
+    def _lens_turn(self, category: str, task: str, filename: str, current_code: str,
+                   language: str) -> str:
         return (
             f"ORIGINAL REQUEST: {task}\n\n"
             f"FILE: {filename}\nLatest version of the code under review:\n"
             f"{self._code_block(current_code, language)}\n\n"
-            f"Debate so far:\n{self.log.transcript_text()}\n\n"
-            "It is your turn, ADVERSARY. Attack this code now per your instructions: "
-            "security first, then whether it meets the ORIGINAL REQUEST. "
-            f"If nothing critical remains and it meets the request, reply exactly "
-            f"{NO_ISSUES_TOKEN}."
+            f"Debate so far:\n{self._transcript()}\n\n"
+            f"Apply your {category} lens to the latest code now and report findings in the "
+            "required format. Stay strictly within your lens."
         )
 
-    def _author_rebuttal(self, task: str, filename: str, original_code: str,
-                         language: str) -> str:
+    def _grouped_findings_text(self, lens_texts: dict[str, str]) -> str:
+        parts = []
+        for category, _ in LENSES:
+            body = (lens_texts.get(category) or "").strip() or "(no findings)"
+            parts.append(f"=== {category} FINDINGS ===\n{body}")
+        return "\n\n".join(parts)
+
+    def _author_rebuttal(self, task: str, filename: str, current_code: str,
+                         language: str, lens_texts: dict[str, str]) -> str:
         return (
             f"ORIGINAL REQUEST: {task}\n\n"
-            f"Original code (FILE: {filename}):\n"
-            f"{self._code_block(original_code, language)}\n\n"
-            f"Debate so far:\n{self.log.transcript_text()}\n\n"
-            "The ADVERSARY just raised the issues above. Respond now: for each point, "
-            "either FIX the code (show the full updated version in a fenced code block) "
-            "or DEFEND it with a concrete technical reason."
+            f"Latest version of the code (FILE: {filename}):\n"
+            f"{self._code_block(current_code, language)}\n\n"
+            f"The adversary reviewed it through three lenses:\n"
+            f"{self._grouped_findings_text(lens_texts)}\n\n"
+            "Respond now: for each finding, either FIX the code (show the full updated "
+            "version in a fenced code block) or DEFEND it with a concrete technical reason. "
+            "Prioritize SECURITY findings, then SPEC, then LOGIC. Build on the LATEST "
+            "version above, not the original."
         )
 
     def _mediator_turn(self, task: str, filename: str, original_code: str,
-                       language: str) -> str:
+                       language: str, lens_texts: dict[str, str]) -> str:
         return (
             f"ORIGINAL REQUEST: {task}\n\n"
             f"Original code (FILE: {filename}):\n"
             f"{self._code_block(original_code, language)}\n\n"
-            f"Full debate transcript:\n{self.log.transcript_text()}\n\n"
-            "You are the MEDIATOR. Reconcile the debate and produce your final answer now "
+            f"Adversary findings, grouped by lens:\n"
+            f"{self._grouped_findings_text(lens_texts)}\n\n"
+            f"Full debate transcript:\n{self._transcript()}\n\n"
+            "You are the MEDIATOR. Weigh the findings BY CATEGORY (resolve SECURITY first, "
+            "then SPEC compliance, then LOGIC/edge-cases); for each, decide if it is valid "
+            "and apply the fix, or reject it with a reason. Then produce your final answer "
             "in exactly four sections: FINAL_CODE, VERDICT, SUMMARY, RESIDUAL_RISKS."
         )
 
@@ -129,13 +182,21 @@ class Orchestrator:
             if on_event:
                 on_event(ev)
 
-        def thinking(role: str, round_no: int) -> None:
-            emit({"type": "thinking", "role": role, "round": round_no})
+        def thinking(role: str, round_no: int, lens: str = "") -> None:
+            ev = {"type": "thinking", "role": role, "round": round_no}
+            if lens:
+                ev["lens"] = lens
+            emit(ev)
 
-        def turn(round_no: int, role: str, content: str, model: str) -> None:
-            self.log.add(round_no, role, content, model)
-            emit({"type": "turn", "round": round_no, "role": role,
-                  "content": content, "model": model})
+        def turn(round_no: int, role: str, content: str, model: str,
+                 lens: str = "") -> None:
+            log_content = f"[{lens} LENS]\n{content}" if lens else content
+            self.log.add(round_no, role, log_content, model)
+            ev = {"type": "turn", "round": round_no, "role": role,
+                  "content": content, "model": model}
+            if lens:
+                ev["lens"] = lens
+            emit(ev)
 
         # Round 0 — Author's initial review.
         thinking("author", 0)
@@ -146,29 +207,44 @@ class Orchestrator:
 
         stopped_early = False
         rounds_run = 0
+        all_findings: list[Finding] = []
+        last_lens_texts: dict[str, str] = {}
         for r in range(1, self.max_rounds + 1):
             rounds_run = r
 
-            # Adversary attacks the latest code.
-            thinking("adversary", r)
-            adv_ctx = self._adversary_turn(task, filename, latest_code, language)
-            adv_reply = self.adversary.respond(adv_ctx)
-            turn(r, "adversary", adv_reply, self.adversary.model)
+            # Adversary attacks the latest code through three focused lenses.
+            lens_texts: dict[str, str] = {}
+            round_findings: list[Finding] = []
+            for category, agent in self.lenses:
+                thinking("adversary", r, lens=category)
+                ctx = self._lens_turn(category, task, filename, latest_code, language)
+                reply = agent.respond(ctx)
+                lens_texts[category] = reply
+                turn(r, "adversary", reply, agent.model, lens=category)
+                round_findings.extend(parse_findings(reply, category))
 
-            if NO_ISSUES_TOKEN in adv_reply.upper():
+            last_lens_texts = lens_texts
+            all_findings.extend(round_findings)
+            sorted_round = sort_findings(round_findings)
+            emit({"type": "findings", "round": r,
+                  "findings": [f.to_dict() for f in sorted_round],
+                  "counts": _count_by_category(round_findings)})
+
+            # If no lens found anything actionable, the code survived — stop.
+            if not round_findings:
                 stopped_early = True
                 break
 
-            # Author fixes or defends.
+            # Author fixes or defends, building on the latest version.
             thinking("author", r)
-            reb_ctx = self._author_rebuttal(task, filename, code, language)
+            reb_ctx = self._author_rebuttal(task, filename, latest_code, language, lens_texts)
             author_reply = self.author.respond(reb_ctx)
             turn(r, "author", author_reply, self.author.model)
             latest_code = extract_last_code_block(author_reply) or latest_code
 
-        # Final pass — the Mediator reconciles the whole debate.
+        # Final pass — the Mediator reconciles, weighing findings by category.
         thinking("mediator", rounds_run)
-        med_ctx = self._mediator_turn(task, filename, code, language)
+        med_ctx = self._mediator_turn(task, filename, code, language, last_lens_texts)
         med_reply = self.mediator.respond(med_ctx)
         turn(rounds_run, "mediator", med_reply, self.mediator.model)
         mediator_result = parse_mediator(med_reply)
@@ -177,7 +253,8 @@ class Orchestrator:
               "security": mediator_result.security_verdict,
               "requirement": mediator_result.requirement_verdict,
               "summary": mediator_result.summary,
-              "final_code": mediator_result.final_code})
+              "final_code": mediator_result.final_code,
+              "counts": _count_by_category(all_findings)})
 
         return DebateResult(
             log=self.log,
@@ -186,4 +263,5 @@ class Orchestrator:
             rounds_run=rounds_run,
             stopped_early=stopped_early,
             mediator=mediator_result,
+            findings=all_findings,
         )

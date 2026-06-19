@@ -68,25 +68,32 @@ Round 0 (seed):
     - If task is "implement": Author writes the first version.
 
 For round r in 1..N:
-    Adversary  ← sees the user's ORIGINAL REQUEST + latest code + full history
-               → produces a critique. PRIMARY focus security, SECONDARY focus whether
-                 the code meets the user's request. Each issue tagged
-                 [SECURITY] / [REQUIREMENT] / [LOGIC] / [EDGE-CASE] / [STYLE] with severity.
-                 Always includes a REQUIREMENT verdict (does it do what was asked?).
-    Author     ← sees the critique
+    Adversary  ← runs THREE focused lenses over the latest code, each its own agent with a
+                 tight system prompt and a shared machine-readable finding format
+                 (SEVERITY | TITLE | WHERE | DETAIL | FIX):
+                   • SECURITY lens — injection, auth/access, crypto misuse, secrets, etc.
+                   • SPEC lens     — does the code do what the ORIGINAL REQUEST asked?
+                   • LOGIC lens    — off-by-one, null/empty, concurrency, error paths.
+                 Findings are parsed into structured records and grouped by category.
+    Author     ← sees the findings grouped by lens
                → either patches the code or defends each point with reasoning.
-    Early stop: if Adversary returns "NO_CRITICAL_ISSUES", break.
+    Early stop: if all three lenses return no findings, break.
 
 Final:
-    Mediator   ← sees the original request + the entire transcript
-               → evaluates which critiques were valid, which defenses held,
-                 resolves contradictions, applies fixes (security first), and
-                 confirms FINAL_CODE both is secure and satisfies the request. Emits:
+    Mediator   ← sees the original request, the findings GROUPED BY CATEGORY, and the
+                 transcript
+               → weighs findings by category (security first, then spec, then logic),
+                 resolves contradictions, applies fixes, and confirms FINAL_CODE both is
+                 secure and satisfies the request. Emits:
                    1. FINAL_CODE  (the reconciled version)
                    2. VERDICT     (Security: PASS/FAIL, Requirement: MET/NOT MET)
                    3. SUMMARY     (key issues found + decisions made)
                    4. RESIDUAL_RISKS (anything still uncertain)
 ```
+
+Each lens inherits the `adversary` provider/model unless given its own
+`[agents.adversary_security|adversary_spec|adversary_logic]` block, so the split costs
+nothing to configure.
 
 ### Why a fixed structure
 Free-form multi-agent chat tends to collapse into agreement or loop forever. A fixed turn order with tagged outputs keeps the debate adversarial, bounded, and parseable.

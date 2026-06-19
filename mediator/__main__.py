@@ -204,6 +204,21 @@ def cmd_review(args: argparse.Namespace) -> int:
             )
 
     console.print(f"[dim]Transcript saved to {saved}[/dim]")
+
+    if args.apply:
+        if med is not None and med.final_code is not None:
+            final = med.final_code if med.final_code.endswith("\n") else med.final_code + "\n"
+            try:
+                target.write_text(final, encoding="utf-8")
+                console.print(f"[bold green]Applied FINAL_CODE to {target}[/bold green]")
+            except OSError as exc:
+                console.print(f"[bold red]Could not write {target}:[/bold red] {exc}")
+                return 1
+        else:
+            console.print(
+                "[yellow]--apply was set but no FINAL_CODE block was produced; "
+                "nothing written.[/yellow]"
+            )
     return 0
 
 
@@ -319,6 +334,10 @@ def build_parser() -> argparse.ArgumentParser:
     review_p.add_argument(
         "--refine", action="store_true",
         help="First rewrite the task into a structured brief via the Prompt Engineer.",
+    )
+    review_p.add_argument(
+        "--apply", action="store_true",
+        help="Overwrite the reviewed file with the Mediator's FINAL_CODE (if produced).",
     )
     review_p.set_defaults(func=cmd_review)
 

@@ -12,8 +12,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .agent import build_agent
+from .agent import Agent, build_agent
+from .client import client_for_role
 from .config import Config
+from .profiles import profile_for
+from .prompts import VERIFY_ASSESS_PROMPT
 
 NO_COMMANDS_TOKEN = "NO_COMMANDS"
 
@@ -81,3 +84,39 @@ def plan_verification(config: Config, task: str, filename: str, code: str,
     )
     reply = agent.respond(prompt)
     return parse_commands(reply)
+
+
+MAX_OUTPUT_CHARS = 4000
+
+
+def assess_results(config: Config, task: str, filename: str, code: str,
+                   results: list[dict], language: str = "") -> str:
+    """Grounded follow-up: the Mediator judges the code using real command output.
+
+    ``results`` is a list of ``{"command", "output", "code"}`` dicts captured from the
+    user-approved terminal runs. This closes the verify loop — the agents now reason from
+    actual evidence instead of only proposing checks.
+    """
+    client, model = client_for_role(config, "mediator")
+    agent = Agent(role="mediator", system_prompt=VERIFY_ASSESS_PROMPT, client=client,
+                  model=model, temperature=config.agent("mediator").temperature,
+                  profile=profile_for(model))
+
+    blocks: list[str] = []
+    for r in results:
+        out = (r.get("output") or "").strip()
+        if len(out) > MAX_OUTPUT_CHARS:
+            out = out[:MAX_OUTPUT_CHARS] + "\n…[output truncated]…"
+        exit_code = r.get("code")
+        blocks.append(
+            f"$ {r.get('command', '')}\n(exit code: {exit_code})\n{out or '(no output)'}"
+        )
+    evidence = "\n\n".join(blocks) or "(no commands were run)"
+
+    prompt = (
+        f"ORIGINAL REQUEST: {task}\n\n"
+        f"FILE: {filename}\n```{language}\n{code}\n```\n\n"
+        f"VERIFICATION RESULTS (commands the user actually ran):\n{evidence}\n\n"
+        "Give your grounded assessment now."
+    )
+    return agent.respond(prompt)

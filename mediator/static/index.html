@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="csrf-token" content="__CSRF_TOKEN__"/>
 <title>Mediator IDE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -230,6 +231,142 @@
   .runbtn{flex:none;background:var(--grad);color:#fff;border:0;border-radius:8px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;}
   .runbtn:hover{box-shadow:0 4px 14px rgba(125,110,255,.4);}
   .runbtn.done{background:var(--elev2);color:var(--muted);cursor:default;box-shadow:none;}
+
+  /* proposed-change card + diff modal */
+  .proposal{display:flex;flex-direction:column;gap:9px;}
+  .proposal .pnote{font-size:11.5px;color:var(--faint);}
+  .proposal .prow{display:flex;gap:8px;flex-wrap:wrap;}
+  .proposal .ppath{font-family:var(--mono);font-size:11.5px;color:#dde3ee;background:#06080d;
+       border:1px solid var(--line);border-radius:8px;padding:6px 9px;word-break:break-all;}
+  .modal{position:fixed;inset:0;z-index:120;background:rgba(4,6,10,.66);backdrop-filter:blur(3px);
+       display:flex;align-items:center;justify-content:center;padding:32px;}
+  .modal-card{background:var(--panel);border:1px solid var(--line2);border-radius:16px;box-shadow:var(--shadow);
+       width:min(1180px,96vw);height:min(80vh,820px);display:flex;flex-direction:column;overflow:hidden;}
+  .modal-hd{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .modal-hd .mt{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;}
+  .modal-hd .mt .ficon{width:16px;height:16px;}
+  .modal-hd .sp{flex:1;}
+  .modal-hd .legend{font-size:11px;color:var(--faint);display:flex;gap:12px;}
+  .modal-hd .legend b{font-weight:600;}
+  .modal-hd .legend .add{color:var(--green);} .modal-hd .legend .del{color:var(--red);}
+  .modal-body{flex:1;min-height:0;position:relative;}
+  #diffHost{position:absolute;inset:0;}
+
+  /* source control */
+  .scmbox{padding:10px 12px;display:flex;flex-direction:column;gap:9px;}
+  .scmbranch{font-size:12px;color:var(--accent);font-weight:600;}
+  .scmbox input{width:100%;background:var(--bg2);border:1px solid var(--line2);color:var(--text);
+       border-radius:9px;padding:8px 10px;font-size:13px;}
+  .scmbox input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(109,124,255,.12);}
+  .scmbtns{display:flex;gap:6px;flex-wrap:wrap;}
+  .scmfiles{display:flex;flex-direction:column;gap:2px;margin-top:4px;}
+  .scmempty{color:var(--faint);font-size:12px;padding:8px 2px;}
+  .scmfile{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;}
+  .scmfile:hover{background:var(--hover);}
+  .scmstat{width:18px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--yellow);flex:none;}
+  .scmstat.st{color:var(--green);}
+  .scmpath{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+  .scmact{width:22px;height:22px;flex:none;font-weight:700;}
+  .toollog{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;}
+  .toolline{font-family:var(--mono);font-size:11px;color:var(--faint);}
+
+  /* adversary lens findings */
+  .findings{display:flex;flex-direction:column;gap:8px;}
+  .fsum{display:flex;gap:8px;flex-wrap:wrap;}
+  .fcat{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line2);}
+  .fcat.security{color:var(--adversary);border-color:rgba(255,107,129,.4);background:rgba(255,107,129,.10);}
+  .fcat.spec{color:var(--mediator);border-color:rgba(91,157,255,.4);background:rgba(91,157,255,.10);}
+  .fcat.logic{color:var(--yellow);border-color:rgba(255,209,102,.4);background:rgba(255,209,102,.10);}
+  .frow{display:flex;gap:9px;align-items:flex-start;background:#06080d;border:1px solid var(--line);border-radius:9px;padding:8px 10px;}
+  .sev{font-size:9.5px;font-weight:800;padding:3px 7px;border-radius:6px;flex:none;letter-spacing:.03em;margin-top:1px;}
+  .sev.critical{background:#ff3b5c;color:#fff;} .sev.high{background:rgba(255,107,129,.18);color:var(--red);}
+  .sev.medium{background:rgba(255,209,102,.18);color:var(--yellow);} .sev.low{background:var(--elev2);color:var(--muted);}
+  .fcat2{font-size:9.5px;font-weight:700;color:var(--faint);flex:none;margin-top:3px;}
+  .fbody{flex:1;min-width:0;}
+  .ftitle{font-size:12.5px;color:#eaeef6;font-weight:600;}
+  .fwhere{font-family:var(--mono);font-size:11px;color:var(--accent);margin-top:2px;}
+  .fdetail{font-size:12px;color:var(--muted);margin-top:3px;}
+  .ffix{font-size:12px;color:var(--green);margin-top:3px;}
+
+  /* ============================================================
+     GLASSMORPHISM THEME  — frosted panels, depth, vivid accents
+     ============================================================ */
+  :root{
+    --bg:#05060d;
+    --accent:#8a93ff; --accent2:#c08bff;
+    --grad:linear-gradient(135deg,#7c8bff 0%,#b06bff 52%,#ff7ac3 100%);
+    --glass:rgba(18,22,36,.55);
+    --glass-soft:rgba(255,255,255,.05);
+    --glass-line:rgba(255,255,255,.10);
+    --glass-line2:rgba(255,255,255,.16);
+    --shadow:0 20px 60px rgba(0,0,0,.55);
+    --glow:0 0 0 1px rgba(138,147,255,.40),0 12px 44px rgba(124,110,255,.32);
+    --blur:saturate(160%) blur(22px);
+  }
+  body{
+    background:
+      radial-gradient(1200px 760px at 84% -14%, rgba(176,107,255,.22), transparent 56%),
+      radial-gradient(1050px 700px at -10% 6%, rgba(109,124,255,.20), transparent 56%),
+      radial-gradient(900px 620px at 50% 124%, rgba(255,122,195,.14), transparent 58%),
+      radial-gradient(700px 700px at 18% 92%, rgba(66,211,146,.07), transparent 60%),
+      var(--bg);
+  }
+  /* animated aurora layer behind everything */
+  body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(40% 50% at 20% 30%, rgba(124,139,255,.16), transparent 60%),
+      radial-gradient(38% 46% at 80% 24%, rgba(176,107,255,.16), transparent 60%),
+      radial-gradient(44% 50% at 60% 84%, rgba(255,122,195,.10), transparent 60%);
+    filter:blur(30px);animation:aurora 24s ease-in-out infinite alternate;}
+  @keyframes aurora{0%{transform:translate3d(0,0,0) scale(1);}50%{transform:translate3d(-3%,2%,0) scale(1.08);}100%{transform:translate3d(3%,-2%,0) scale(1.04);}}
+
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(138,147,255,.45);}
+
+  /* glass surfaces */
+  .titlebar{background:rgba(10,13,24,.55);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-bottom:1px solid var(--glass-line);}
+  .activity{background:rgba(10,13,24,.42);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-right:1px solid var(--glass-line);}
+  .sidebar{background:rgba(11,14,26,.50);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);}
+  .side-hd{background:transparent;}
+  .editorcol{background:rgba(7,9,18,.30);}
+  .tabs{background:rgba(10,13,24,.40);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--glass-line);}
+  .tab.active{background:rgba(255,255,255,.05);}
+  .breadcrumbs{background:transparent;}
+  .termpanel{background:rgba(6,8,16,.72);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border-top:1px solid var(--glass-line2);}
+  .term-hd{border-bottom:1px solid var(--glass-line);}
+  .chat{background:rgba(11,14,26,.50);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-left:1px solid var(--glass-line);}
+  .chat-hd{border-bottom:1px solid var(--glass-line);}
+  .composer{background:rgba(10,13,24,.40);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-top:1px solid var(--glass-line);}
+
+  /* glass controls */
+  .brand .logo,.chat-hd .av{box-shadow:0 6px 24px rgba(124,110,255,.5),inset 0 1px 0 rgba(255,255,255,.4);}
+  .ws .field{background:var(--glass-soft);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--glass-line);}
+  .chip{background:var(--glass-soft);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--glass-line);}
+  .btn{box-shadow:0 8px 22px rgba(124,110,255,.40),inset 0 1px 0 rgba(255,255,255,.25);}
+  .btn.ghost{background:var(--glass-soft);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--glass-line2);}
+  .btn.ghost:hover{background:rgba(255,255,255,.10);}
+  .act{border:1px solid transparent;}
+  .act:hover{background:var(--glass-soft);}
+  .act.active{background:var(--glass-soft);border:1px solid var(--glass-line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);}
+  .node.active{box-shadow:inset 2px 0 0 var(--accent),0 2px 14px rgba(124,110,255,.12);}
+
+  /* glass cards */
+  .msg .bubble{background:var(--glass-soft);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    border:1px solid var(--glass-line);box-shadow:0 6px 22px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.06);}
+  .msg .bubble pre{background:rgba(3,4,9,.66) !important;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+  .composer .wrap{background:var(--glass-soft);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--glass-line2);}
+  .seg{background:var(--glass-soft);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--glass-line);}
+  .seg button.on{box-shadow:0 4px 14px rgba(124,110,255,.45);}
+  .filehdr{background:linear-gradient(90deg,rgba(124,139,255,.16),rgba(255,255,255,.03));-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid var(--glass-line);}
+  .cmd-row,.frow{-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);background:rgba(3,4,9,.5);}
+  .pill,.fcat,.rbadge{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+  .toast{background:rgba(20,24,38,.7);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border:1px solid var(--glass-line2);}
+  .modal{background:rgba(3,4,9,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+  .modal-card{background:rgba(14,18,30,.72);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border:1px solid var(--glass-line2);box-shadow:var(--shadow);}
+  .searchbox input,.scmbox input,.scmbox{}
+  .welcome .big{box-shadow:0 16px 50px rgba(124,110,255,.5),inset 0 1px 0 rgba(255,255,255,.4);animation:floaty 6s ease-in-out infinite;}
+  @keyframes floaty{0%,100%{transform:translateY(0);}50%{transform:translateY(-9px);}}
+  .statusbar{box-shadow:0 -6px 24px rgba(124,110,255,.25);}
 </style>
 </head>
 <body>
@@ -251,7 +388,7 @@
     <div class="activity">
       <div class="act active" data-view="explorer" title="Explorer (Ctrl+B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
       <div class="act" data-view="search" title="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
-      <div class="act" data-view="agents" title="AI Agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4z"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/></svg></div>
+      <div class="act" data-view="scm" title="Source Control"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 1-6 5"/></svg></div>
       <div class="act" data-view="terminal" title="Terminal (Ctrl+`)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M7 9l3 3-3 3M13 15h4"/></svg></div>
     </div>
 
@@ -270,6 +407,22 @@
         <div class="side-hd">Search</div>
         <div class="searchbox"><input id="searchInput" placeholder="Search across files…"/></div>
         <div class="sres" id="sres"></div>
+      </div>
+      <div id="scmPane" class="hidden">
+        <div class="side-hd"><span>Source Control</span>
+          <div class="tools"><button class="iconbtn" id="scmRefresh" title="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
+        </div>
+        <div class="scmbox">
+          <div class="scmbranch" id="scmBranch">—</div>
+          <input id="commitMsg" placeholder="Commit message"/>
+          <div class="scmbtns">
+            <button class="btn sm" id="commitBtn">Commit</button>
+            <button class="btn ghost sm" id="stageAllBtn">Stage all</button>
+            <button class="btn ghost sm" id="branchBtn">Branch</button>
+            <button class="btn ghost sm" id="pushBtn">Push</button>
+          </div>
+          <div class="scmfiles" id="scmFiles"></div>
+        </div>
       </div>
     </div>
 
@@ -313,7 +466,7 @@
           <textarea id="prompt" placeholder="Ask the agents…  e.g. review this for security and edge cases">Review this code for security, bugs, and whether it meets its purpose.</textarea>
           <div class="bar">
             <div class="opts">
-              <div class="seg" id="scopeSeg"><button class="on" data-scope="file">This file</button><button data-scope="folder">Folder</button><button data-scope="build">Build app</button></div>
+              <div class="seg" id="scopeSeg"><button class="on" data-scope="file">This file</button><button data-scope="ask">Ask</button><button data-scope="folder">Folder</button><button data-scope="edit">Edit</button><button data-scope="build">Build app</button></div>
               <label id="refineToggle"><span class="switch" id="refineSw"></span> Refine</label>
               <label>Rounds <input type="number" id="rounds" min="1" max="6" value="2"/></label>
             </div>
@@ -339,6 +492,19 @@
     </div>
   </div>
 </div>
+<div class="modal hidden" id="diffModal">
+  <div class="modal-card">
+    <div class="modal-hd">
+      <span class="mt" id="diffTitle">Review changes</span>
+      <span class="sp"></span>
+      <span class="legend"><span><b class="del">−</b> original</span><span><b class="add">+</b> proposed (editable)</span></span>
+      <button class="btn ghost sm" id="diffReject">Discard</button>
+      <button class="btn sm" id="diffApply">Apply changes</button>
+      <button class="iconbtn" id="diffClose" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="modal-body"><div id="diffHost"></div></div>
+  </div>
+</div>
 <div class="toasts" id="toasts"></div>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
@@ -346,7 +512,10 @@
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>(s||"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-async function api(url,opts){const r=await fetch(url,opts);const d=await r.json().catch(()=>({error:'Bad response'}));
+const CSRF=(document.querySelector('meta[name="csrf-token"]')||{}).content||'';
+function withCsrf(headers){return Object.assign({'X-CSRF-Token':CSRF},headers||{});}
+async function api(url,opts){opts=opts||{};opts.headers=withCsrf(opts.headers);
+  const r=await fetch(url,opts);const d=await r.json().catch(()=>({error:'Bad response'}));
   if(!r.ok||d.error)throw new Error(d.error||('HTTP '+r.status));return d;}
 function toast(msg,kind){const t=document.createElement('div');t.className='toast '+(kind||'');t.innerHTML=msg;
   $('#toasts').appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transition='.3s';setTimeout(()=>t.remove(),300);},kind==='err'?5200:2600);}
@@ -356,6 +525,10 @@ const LANG_COLOR={py:'#4b8bbe',js:'#f1e05a',ts:'#3178c6',tsx:'#3178c6',jsx:'#f1e
   rs:'#dea584',rb:'#cc342d',php:'#a8b9ea',c:'#888',h:'#888',cpp:'#f34b7d',cs:'#9179c4',sh:'#89e051',sql:'#e38c00',
   html:'#e34c26',css:'#8a5cff',kt:'#a97bff',json:'#cbcb41',md:'#5b9dff',yml:'#cb6470',yaml:'#cb6470',toml:'#bb6a3a',txt:'#8a93a6'};
 const eom=n=>{const m=n.lastIndexOf('.');return m<0?'':n.slice(m+1).toLowerCase();};
+const EXT_MONACO={py:'python',js:'javascript',ts:'typescript',tsx:'typescript',jsx:'javascript',java:'java',
+  go:'go',rs:'rust',rb:'ruby',php:'php',c:'c',h:'c',cpp:'cpp',cs:'csharp',sh:'shell',sql:'sql',html:'html',
+  css:'css',kt:'kotlin',json:'json',md:'markdown',yml:'yaml',yaml:'yaml',toml:'ini',txt:'plaintext',xml:'xml'};
+const langFor=p=>EXT_MONACO[eom(p||'')]||'plaintext';
 function fileIco(n){const c=LANG_COLOR[eom(n)]||'#8a93a6';
   return `<svg class="ficon" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>`;}
 function folderIco(){return `<svg class="ficon" viewBox="0 0 24 24" fill="none" stroke="#7a8398" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;}
@@ -392,18 +565,63 @@ $$('.act').forEach(a=>a.onclick=()=>{
   const v=a.dataset.view;
   if(v==='agents'){$('#prompt').focus();return;}
   if(v==='terminal'){toggleTerm();return;}
-  $$('.act[data-view="explorer"],.act[data-view="search"]').forEach(x=>x.classList.toggle('active',x===a));
+  $$('.act[data-view="explorer"],.act[data-view="search"],.act[data-view="scm"]').forEach(x=>x.classList.toggle('active',x===a));
   $('#explorerPane').classList.toggle('hidden',v!=='explorer');
   $('#searchPane').classList.toggle('hidden',v!=='search');
+  $('#scmPane').classList.toggle('hidden',v!=='scm');
   if(v==='search')$('#searchInput').focus();
+  if(v==='scm')loadScm();
 });
+
+/* source control */
+async function loadScm(){
+  try{const d=await api('/api/git/status');
+    if(!d.repo){$('#scmBranch').textContent='Not a git repository';$('#scmFiles').innerHTML='';return;}
+    $('#scmBranch').textContent='⎇ '+d.branch;
+    const files=d.files||[];
+    if(!files.length){$('#scmFiles').innerHTML='<div class="scmempty">No changes</div>';return;}
+    $('#scmFiles').innerHTML='';
+    for(const f of files){
+      const row=document.createElement('div');row.className='scmfile';
+      const code=f.untracked?'U':((f.staged?f.index:f.work)||'M').trim()||'M';
+      row.innerHTML=`<span class="scmstat ${f.staged?'st':''}">${esc(code)}</span>`+
+        `<span class="scmpath" title="${esc(f.path)}">${esc(f.path)}</span>`+
+        `<button class="iconbtn scmact">${f.staged?'−':'+'}</button>`;
+      row.querySelector('.scmpath').onclick=()=>showGitDiff(f.path,f.staged);
+      row.querySelector('.scmact').onclick=async e=>{e.stopPropagation();
+        try{await api(f.staged?'/api/git/unstage':'/api/git/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[f.path]})});loadScm();}
+        catch(err){toast(esc(err.message),'err');}};
+      $('#scmFiles').appendChild(row);
+    }
+  }catch(e){$('#scmBranch').textContent='git error';toast(esc(e.message),'err');}
+}
+async function showGitDiff(path,staged){
+  try{const d=await api('/api/git/diff?path='+encodeURIComponent(path)+'&staged='+(staged?'true':'false'));
+    const text=d.diff&&d.diff.trim()?d.diff:'(no textual diff — new or binary file)';
+    addMsg('sys','git diff · '+path,'```diff\n'+text+'\n```',true);
+  }catch(e){toast(esc(e.message),'err');}
+}
+$('#scmRefresh').onclick=loadScm;
+$('#stageAllBtn').onclick=async()=>{try{await api('/api/git/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[]})});loadScm();}catch(e){toast(esc(e.message),'err');}};
+$('#commitBtn').onclick=async()=>{const m=$('#commitMsg').value.trim();if(!m){toast('Enter a commit message.','err');return;}
+  try{await api('/api/git/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});$('#commitMsg').value='';toast('Committed','ok');loadScm();}
+  catch(e){toast('Commit failed: '+esc(e.message),'err');}};
+$('#branchBtn').onclick=async()=>{const n=prompt('New branch name:');if(!n)return;
+  try{await api('/api/git/branch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n.trim()})});toast('Created branch '+n,'ok');loadScm();}
+  catch(e){toast(esc(e.message),'err');}};
+$('#pushBtn').onclick=async()=>{
+  try{const b=await api('/api/git/branches');
+    const up=confirm('Push "'+b.branch+'" to origin and set upstream?\n\nOK = push with -u (new branch)\nCancel = plain push');
+    await api('/api/git/push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({set_upstream:up,branch:b.branch})});
+    toast('Pushed '+b.branch,'ok');}
+  catch(e){toast('Push failed: '+esc(e.message),'err');}};
 
 /* explorer */
 $('#openBtn').onclick=openWs;
 $('#wsPath').addEventListener('keydown',e=>{if(e.key==='Enter')openWs();});
 async function openWs(){const path=$('#wsPath').value.trim();if(!path)return;
-  try{const d=await api('/api/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
-    $('#wsPath').value=d.root;setWs(d.root);$('#tree').innerHTML='';renderEntries(d.entries,$('#tree'));toast('Opened '+d.root,'ok');
+  try{await api('/api/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
+    location.reload();
   }catch(e){toast('Could not open: '+esc(e.message),'err');}}
 $('#refreshBtn').onclick=()=>{$('#tree').innerHTML='';loadTree('',$('#tree'));};
 async function loadTree(path,ul){try{const d=await api('/api/tree?path='+encodeURIComponent(path));renderEntries(d.entries,ul);}catch(e){toast(esc(e.message),'err');}}
@@ -493,13 +711,15 @@ function termLine(text,cls){const d=document.createElement('div');d.className='l
   $('#termBody').appendChild(d);$('#termBody').scrollTop=$('#termBody').scrollHeight;return d;}
 $('#termStop').onclick=async()=>{try{await api('/api/terminal/stop',{method:'POST'});termLine('^C (stopped)','exit');}catch(e){}};
 async function runTermCommand(cmd){
-  if(termBusy){toast('Terminal is busy — wait for the current command.','err');return;}
+  if(termBusy){toast('Terminal is busy — wait for the current command.','err');return null;}
   termOpen();termLine(cmd,'cmd');termBusy=true;
+  let out='',code=null;
   try{await streamNDJSON('/api/terminal/run',{command:cmd},ev=>{
-    if(ev.type==='out')termLine(ev.data.replace(/\n$/,''));
-    else if(ev.type==='exit')termLine('exit '+ev.code,'exit'+(ev.code?' bad':''));});}
-  catch(err){termLine('Error: '+err.message,'exit bad');}
-  termBusy=false;$('#termBody').scrollTop=$('#termBody').scrollHeight;}
+    if(ev.type==='out'){out+=ev.data;termLine(ev.data.replace(/\n$/,''));}
+    else if(ev.type==='exit'){code=ev.code;termLine('exit '+ev.code,'exit'+(ev.code?' bad':''));}});}
+  catch(err){termLine('Error: '+err.message,'exit bad');out+='Error: '+err.message;}
+  termBusy=false;$('#termBody').scrollTop=$('#termBody').scrollHeight;
+  return {command:cmd,output:out,code:code};}
 $('#termInput').addEventListener('keydown',async e=>{
   if(e.key==='ArrowUp'){if(termHist.length){termIdx=Math.max(0,termIdx-1);e.target.value=termHist[termIdx]||'';}e.preventDefault();return;}
   if(e.key==='ArrowDown'){if(termHist.length){termIdx=Math.min(termHist.length,termIdx+1);e.target.value=termHist[termIdx]||'';}e.preventDefault();return;}
@@ -525,9 +745,32 @@ const refineState={on:false};
 $('#refineToggle').onclick=()=>{refineState.on=!refineState.on;$('#refineSw').classList.toggle('on',refineState.on);};
 let scope='file';
 $$('#scopeSeg button').forEach(b=>b.onclick=()=>{scope=b.dataset.scope;$$('#scopeSeg button').forEach(x=>x.classList.toggle('on',x===b));
-  $('#reviewBtn').textContent=scope==='folder'?'Review folder':(scope==='build'?'Build app':'Review file');
-  $('#verifyBtn').style.display=scope==='build'?'none':'';
-  $('#prompt').placeholder=scope==='build'?'Describe the app to build… e.g. a Flask todo API with SQLite':'Ask the agents…';});
+  $('#reviewBtn').textContent=scope==='folder'?'Review folder':(scope==='build'?'Build app':(scope==='edit'?'Make changes':(scope==='ask'?'Ask':'Review file')));
+  $('#verifyBtn').style.display=(scope==='build'||scope==='edit'||scope==='ask')?'none':'';
+  $('#prompt').placeholder=scope==='build'?'Describe the app to build… e.g. a Flask todo API with SQLite':
+    (scope==='edit'?'Describe the change across the project… e.g. add structured request logging to every API route':
+    (scope==='ask'?'Ask about your codebase… e.g. how does authentication work here?':'Ask the agents…'));});
+
+/* continuous assistant chat (Ask) with tools + token streaming */
+const askHistory=[];
+async function runAsk(text){
+  askHistory.push({role:'user',content:text});
+  addMsg('user','you',text);
+  const bubble=addMsg('mediator','assistant','',false);
+  bubble.innerHTML='<div class="toollog"></div><div class="ans"><span class="spin"></span> Thinking…</div>';
+  const tl=bubble.querySelector('.toollog'),ans=bubble.querySelector('.ans');
+  let acc='',started=false;
+  try{
+    await streamNDJSON('/api/chat/stream',{messages:askHistory,use_tools:true},ev=>{
+      if(ev.type==='tool'){const t=document.createElement('div');t.className='toolline';
+        t.textContent='🔧 '+ev.action+(ev.target?' · '+ev.target:'');tl.appendChild(t);}
+      else if(ev.type==='token'){if(!started){ans.innerHTML='';started=true;}acc+=ev.text;ans.innerHTML=md(acc);$('#msgs').scrollTop=$('#msgs').scrollHeight;}
+      else if(ev.type==='error'){ans.innerHTML='<span style="color:var(--red)">'+esc(ev.message)+'</span>';}
+    });
+  }catch(e){ans.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';}
+  if(acc)askHistory.push({role:'assistant',content:acc});
+  else askHistory.pop();
+}
 $('#prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();$('#reviewBtn').click();}});
 $('#promptBtn').onclick=async()=>{const text=$('#prompt').value.trim();if(!text)return;addMsg('user','you',text);
   const b=addMsg('pe','prompt engineer','',false);b.innerHTML='<span class="spin"></span> Refining…';
@@ -544,29 +787,100 @@ $('#verifyBtn').onclick=async()=>{
     const d=await api('/api/verify/plan',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({code:t.model.getValue(),filename:t.name,task})});
     if(!d.commands||!d.commands.length){b.innerHTML='No useful verification commands were proposed.';return;}
-    b.innerHTML='';b.appendChild(approvalCard(d.commands));$('#msgs').scrollTop=$('#msgs').scrollHeight;
+    b.innerHTML='';b.appendChild(approvalCard(d.commands,null,{code:t.model.getValue(),filename:t.name,task}));$('#msgs').scrollTop=$('#msgs').scrollHeight;
   }catch(e){b.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';}
 };
 
+/* diff & apply: turn the Mediator's FINAL_CODE into a reviewable patch */
+let diffEditor=null,diffState=null;
+async function getOriginal(path,ctx){
+  if(ctx&&ctx.path===path)return{content:ctx.original,lang:(tabs.get(path)?tabs.get(path).lang:langFor(path))};
+  const d=await api('/api/file?path='+encodeURIComponent(path));return{content:d.content,lang:d.language||langFor(path)};
+}
+function openDiff(path,original,proposed,lang){
+  diffState={path};
+  $('#diffTitle').innerHTML=fileIco(path?path.split('/').pop():'snippet.txt')+'<span>Review changes · '+esc(path||'snippet')+'</span>';
+  $('#diffApply').disabled=!path;
+  $('#diffModal').classList.remove('hidden');
+  if(!diffEditor){
+    diffEditor=monaco.editor.createDiffEditor($('#diffHost'),{theme:'mediator',automaticLayout:true,
+      readOnly:false,originalEditable:false,renderSideBySide:true,fontSize:13,
+      fontFamily:'"JetBrains Mono",ui-monospace,Consolas,monospace',minimap:{enabled:false},scrollBeyondLastLine:false});
+  }
+  const om=monaco.editor.createModel(original,lang||'plaintext');
+  const mm=monaco.editor.createModel(proposed,lang||'plaintext');
+  diffEditor.setModel({original:om,modified:mm});
+}
+function closeDiff(){$('#diffModal').classList.add('hidden');
+  if(diffEditor){const m=diffEditor.getModel();diffEditor.setModel(null);if(m){m.original.dispose();m.modified.dispose();}}
+  diffState=null;}
+async function writeFile(path,content){
+  await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,content})});
+  if(tabs.has(path)){const t=tabs.get(path);t.model.setValue(content);t.dirty=false;renderTabs();}
+  $('#tree').innerHTML='';loadTree('',$('#tree'));
+}
+$('#diffClose').onclick=closeDiff;$('#diffReject').onclick=closeDiff;
+$('#diffApply').onclick=async()=>{
+  if(!diffState||!diffState.path)return;
+  const path=diffState.path,content=diffEditor.getModel().modified.getValue();
+  try{await writeFile(path,content);toast('Applied changes to '+path,'ok');closeDiff();}
+  catch(e){toast('Apply failed: '+esc(e.message),'err');}
+};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#diffModal').classList.contains('hidden'))closeDiff();});
+
+function showProposal(parentBubble,path,finalCode,ctx){
+  const card=document.createElement('div');card.className='proposal';
+  card.innerHTML='<div class="pnote">The Mediator produced a final version.'+
+    (path?' Review the diff before applying.':' Open a file to apply this to disk.')+'</div>'+
+    (path?'<div class="ppath">'+esc(path)+'</div>':'');
+  const row=document.createElement('div');row.className='prow';
+  const diffBtn=document.createElement('button');diffBtn.className='runbtn';diffBtn.textContent='View diff';
+  diffBtn.onclick=async()=>{try{const o=path?await getOriginal(path,ctx):{content:'',lang:'plaintext'};
+    openDiff(path,o.content,finalCode,o.lang);}catch(e){toast('Could not load original: '+esc(e.message),'err');}};
+  row.appendChild(diffBtn);
+  if(path){
+    const applyBtn=document.createElement('button');applyBtn.className='runbtn';applyBtn.textContent='Apply';
+    applyBtn.onclick=async()=>{if(!confirm('Apply the final version to '+path+'?'))return;
+      try{await writeFile(path,finalCode);applyBtn.textContent='Applied';applyBtn.classList.add('done');applyBtn.disabled=true;
+        diffBtn.disabled=true;toast('Applied changes to '+path,'ok');}
+      catch(e){toast('Apply failed: '+esc(e.message),'err');}};
+    row.appendChild(applyBtn);
+  }
+  card.appendChild(row);parentBubble.appendChild(card);
+  $('#msgs').scrollTop=$('#msgs').scrollHeight;
+}
+
 async function streamNDJSON(url,body,onEvent){
-  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res=await fetch(url,{method:'POST',headers:withCsrf({'Content-Type':'application/json'}),body:JSON.stringify(body)});
   if(!res.ok){const d=await res.json().catch(()=>({error:'HTTP '+res.status}));throw new Error(d.error||('HTTP '+res.status));}
   const reader=res.body.getReader(),dec=new TextDecoder();let buf='';
   for(;;){const{value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});let nl;
     while((nl=buf.indexOf('\n'))>=0){const line=buf.slice(0,nl).trim();buf=buf.slice(nl+1);if(line){try{onEvent(JSON.parse(line));}catch(_){}}}}
   if(buf.trim()){try{onEvent(JSON.parse(buf.trim()));}catch(_){}}}
 
-function makeHandler(){let pending=null;
+function makeHandler(ctx){let pending=null;
   return ev=>{const tag=ev.file?esc(ev.file)+' · ':'';
     switch(ev.type){
       case 'refined':addMsg('pe','refined task',ev.task,true);break;
-      case 'thinking':{const b=addMsg(ev.role,tag+ev.role+' · round '+ev.round,'',false);
-        b.innerHTML='<span class="spin"></span> '+ev.role+' is thinking…';pending={role:ev.role,bubble:b};break;}
-      case 'turn':if(pending&&pending.role===ev.role){pending.bubble.innerHTML=md(ev.content);$('#msgs').scrollTop=$('#msgs').scrollHeight;pending=null;}
-        else addMsg(ev.role,tag+'round '+ev.round+' · '+ev.role,ev.content,true);break;
+      case 'thinking':{const lensTag=ev.lens?ev.lens+' lens · ':'';
+        const b=addMsg(ev.role,tag+lensTag+ev.role+' · round '+ev.round,'',false);
+        b.innerHTML='<span class="spin"></span> '+(ev.lens?ev.lens+' lens analyzing…':ev.role+' is thinking…');
+        pending={role:ev.role,lens:ev.lens||'',bubble:b};break;}
+      case 'turn':if(pending&&pending.role===ev.role&&pending.lens===(ev.lens||'')){pending.bubble.innerHTML=md(ev.content);$('#msgs').scrollTop=$('#msgs').scrollHeight;pending=null;}
+        else addMsg(ev.role,tag+(ev.lens?ev.lens+' lens · ':'')+'round '+ev.round+' · '+ev.role,ev.content,true);break;
+      case 'findings':{const list=ev.findings||[];const counts=ev.counts||{};
+        if(!list.length){addMsg('adversary',tag+'findings · round '+ev.round,'_All three lenses are clear — no issues this round._',true);break;}
+        const b=addMsg('adversary',tag+'findings · round '+ev.round,'',false);b.innerHTML='';
+        b.appendChild(findingsCard(list,counts));$('#msgs').scrollTop=$('#msgs').scrollHeight;break;}
       case 'result':{const v=addMsg('mediator',tag+'verdict','',false);
         v.innerHTML='<div class="verdict">'+pill('Security',ev.security,'PASS')+pill('Requirement',ev.requirement,'MET')+'</div>';
-        if(ev.final_code)addMsg('mediator',tag+'final code',ev.final_code,true);break;}
+        if(ev.final_code){
+          addMsg('mediator',tag+'final code',ev.final_code,true);
+          const targetPath=ev.file||(ctx&&ctx.path)||null;
+          const pb=addMsg('mediator',tag+'apply','',false);pb.innerHTML='';
+          showProposal(pb,targetPath,ev.final_code,ctx);
+        }
+        break;}
       case 'plan':{const h=document.createElement('div');h.className='msg';
         h.innerHTML='<div class="icon sys">•</div><div class="body"><div class="who sys">folder review</div><div class="bubble">'+md('Reviewing **'+ev.total+'** file(s):\n\n'+ev.files.map(f=>'- `'+f+'`').join('\n'))+'</div></div>';
         $('#msgs').appendChild(h);$('#msgs').scrollTop=$('#msgs').scrollHeight;break;}
@@ -580,17 +894,29 @@ function makeHandler(){let pending=null;
       case 'error':{const b=addMsg('sys','error','',false);b.innerHTML='<span style="color:var(--red)">'+esc(ev.message)+'</span>';pending=null;break;}
     }};}
 $('#reviewBtn').onclick=async()=>{const task=$('#prompt').value.trim()||'Review this code.';
-  const rounds=parseInt($('#rounds').value)||null;const btn=$('#reviewBtn');btn.disabled=true;const handler=makeHandler();
+  const rounds=parseInt($('#rounds').value)||null;const btn=$('#reviewBtn');btn.disabled=true;
+  let handler=makeHandler();
   try{
     if(scope==='build'){
       const reqText=$('#prompt').value.trim();
       if(!reqText){toast('Describe the app to build.','err');btn.disabled=false;return;}
       addMsg('user','you','Build: '+reqText);
       await streamNDJSON('/api/generate/stream',{request:reqText},makeGenHandler());
+    }else if(scope==='ask'){
+      const text=$('#prompt').value.trim();
+      if(!text){toast('Ask a question.','err');btn.disabled=false;return;}
+      $('#prompt').value='';
+      await runAsk(text);
+    }else if(scope==='edit'){
+      const reqText=$('#prompt').value.trim();
+      if(!reqText){toast('Describe the change to make.','err');btn.disabled=false;return;}
+      addMsg('user','you','Edit: '+reqText+'  ·  '+$('#wsName').textContent);
+      await streamNDJSON('/api/edit/stream',{request:reqText,path:''},makeEditHandler());
     }else if(scope==='folder'){addMsg('user','you',task+'  ·  folder: '+$('#wsName').textContent);
       await streamNDJSON('/api/review/folder/stream',{path:'',task,rounds,refine:refineState.on},handler);}
     else{if(!activePath){toast('Open a file first.','err');btn.disabled=false;return;}
       const t=tabs.get(activePath);addMsg('user','you',task+'  ·  '+t.name);
+      handler=makeHandler({path:activePath,original:t.model.getValue()});
       await streamNDJSON('/api/review/stream',{code:t.model.getValue(),filename:t.name,task,rounds,refine:refineState.on},handler);
       addMsg('sys','done','Debate finished. Transcript saved to logs/.',false);}
   }catch(e){toast((scope==='build'?'Build':'Review')+' failed: '+esc(e.message),'err');}
@@ -620,21 +946,103 @@ function makeGenHandler(){
       case 'done':{$('#tree').innerHTML='';loadTree('',$('#tree'));
         addMsg('sys','done','Project generated in folder "'+(ev.folder||'')+'". Review the files, then approve the commands above.',false);break;}
     }};}
+/* multi-file debated edits (Phase 13) */
+function makeEditHandler(){
+  let pending=null;const finals=[];
+  return ev=>{
+    switch(ev.type){
+      case 'thinking':{const lbl=ev.role==='pe'?'planning changes':(ev.role+' · reviewing change set');
+        const b=addMsg(ev.role,lbl,'',false);b.innerHTML='<span class="spin"></span> '+
+          (ev.role==='pe'?'Deciding which files to change…':'Attacking the whole change set…');
+        pending={role:ev.role,bubble:b};break;}
+      case 'plan':{const files=(ev.changes||[]).map(c=>'- `'+c.path+'` *('+c.action+')* — '+esc(c.reason||'')).join('\n');
+        const txt='**Plan:** '+esc(ev.summary||'')+'\n\n'+files;
+        if(pending&&pending.role==='pe'){pending.bubble.innerHTML=md(txt);pending=null;}
+        else addMsg('pe','change plan',txt,true);break;}
+      case 'file_thinking':{const h=document.createElement('div');h.className='filehdr';
+        h.innerHTML='<span class="spin"></span>'+fileIco(ev.path.split('/').pop())+'<b>'+esc(ev.path)+'</b><span class="ix">'+ev.action+'</span>';
+        h.id='draft-'+btoa(unescape(encodeURIComponent(ev.path))).replace(/=/g,'');
+        $('#msgs').appendChild(h);$('#msgs').scrollTop=$('#msgs').scrollHeight;break;}
+      case 'file_proposed':{const id='draft-'+btoa(unescape(encodeURIComponent(ev.path))).replace(/=/g,'');
+        const h=document.getElementById(id);if(h)h.innerHTML='<span style="color:var(--author)">✎</span>'+
+          fileIco(ev.path.split('/').pop())+'<b>'+esc(ev.path)+'</b><span class="ix">drafted</span>';break;}
+      case 'critique':{if(pending&&pending.role==='adversary'){pending.bubble.innerHTML=md(ev.content);pending=null;}
+        else addMsg('adversary','adversary · change set',ev.content,true);break;}
+      case 'file_finalizing':{const b=addMsg('mediator','finalizing · '+ev.path,'',false);
+        b.innerHTML='<span class="spin"></span> Finalizing '+esc(ev.path)+'…';pending={role:'mediator',bubble:b};break;}
+      case 'file_final':{if(pending&&pending.role==='mediator'){pending.bubble.innerHTML=md('**Final · `'+ev.path+'`**');pending=null;}
+        const pb=addMsg('mediator','proposed change · '+ev.path,'',false);pb.innerHTML='';
+        showProposal(pb,ev.path,ev.final,{path:ev.path,original:ev.original});
+        finals.push({path:ev.path,final:ev.final});break;}
+      case 'overall_thinking':{const b=addMsg('mediator','change-set report','',false);
+        b.innerHTML='<span class="spin"></span> Compiling the change-set report…';pending={role:'mediator',bubble:b};break;}
+      case 'report':{if(pending){pending.bubble.innerHTML=md(ev.content);pending=null;}else addMsg('mediator','change-set report',ev.content,true);break;}
+      case 'file_skip':addMsg('sys','skipped',ev.path+' ('+ev.reason+')',false);break;
+      case 'file_error':addMsg('sys','error',ev.path+': '+ev.message,false);break;
+      case 'error':{const b=addMsg('sys','error','',false);b.innerHTML='<span style="color:var(--red)">'+esc(ev.message)+'</span>';pending=null;break;}
+      case 'done':{if(finals.length>1){const b=addMsg('sys','apply all','',false);b.innerHTML='';
+        const card=document.createElement('div');card.className='proposal';
+        card.innerHTML='<div class="pnote">Apply every finalized file at once.</div>';
+        const ab=document.createElement('button');ab.className='runbtn';ab.textContent='Apply all '+finals.length+' files';
+        ab.onclick=async()=>{if(!confirm('Write all '+finals.length+' finalized files to disk?'))return;
+          ab.disabled=true;let ok=0;for(const f of finals){try{await writeFile(f.path,f.final);ok++;}catch(e){toast('Failed '+f.path+': '+esc(e.message),'err');}}
+          ab.textContent='Applied '+ok+'/'+finals.length;ab.classList.add('done');toast('Applied '+ok+' file(s)','ok');};
+        card.appendChild(ab);b.appendChild(card);}
+        addMsg('sys','done','Change set complete. Review each diff and apply.',false);break;}
+    }};}
+function findingsCard(list,counts){
+  const wrap=document.createElement('div');wrap.className='findings';
+  const sum=document.createElement('div');sum.className='fsum';
+  sum.innerHTML=['SECURITY','SPEC','LOGIC'].map(c=>`<span class="fcat ${c.toLowerCase()}">${c}: ${counts[c]||0}</span>`).join('');
+  wrap.appendChild(sum);
+  for(const f of list){
+    const row=document.createElement('div');row.className='frow';
+    row.innerHTML=`<span class="sev ${(f.severity||'').toLowerCase()}">${esc(f.severity||'?')}</span>`+
+      `<span class="fcat2">${esc(f.category||'')}</span>`+
+      `<div class="fbody"><div class="ftitle">${esc(f.title||'(untitled)')}</div>`+
+      (f.where?`<div class="fwhere">${esc(f.where)}</div>`:'')+
+      (f.detail?`<div class="fdetail">${esc(f.detail)}</div>`:'')+
+      (f.fix?`<div class="ffix">→ ${esc(f.fix)}</div>`:'')+`</div>`;
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
 function pill(label,val,good){const cls=val===good?'pass':(val&&val!=='?'?'fail':'unk');return `<span class="pill ${cls}">${label}: ${esc(val||'?')}</span>`;}
-function approvalCard(commands,noteText){
+function approvalCard(commands,noteText,assessCtx){
   const wrap=document.createElement('div');wrap.className='approve';
   const note=document.createElement('div');note.className='note';
   note.textContent=noteText||'Proposed commands — nothing runs until you click Run. Red = potentially destructive.';
   wrap.appendChild(note);
+  const results=[];
+  let assessBtn=null;
   for(const c of commands){
     const row=document.createElement('div');row.className='cmd-row';
     row.innerHTML=`<span class="rbadge ${c.risk}">${c.risk}</span>`+
       `<div class="cc"><code>${esc(c.command)}</code>${c.why?`<div class="why">${esc(c.why)}</div>`:''}</div>`+
       `<button class="runbtn">Run</button>`;
     const btn=row.querySelector('.runbtn');
-    btn.onclick=()=>{if(c.risk==='high'&&!confirm('This command is flagged as potentially destructive:\n\n'+c.command+'\n\nRun it anyway?'))return;
-      runTermCommand(c.command);btn.textContent='Ran';btn.classList.add('done');btn.disabled=true;};
+    btn.onclick=async()=>{
+      if(c.risk==='high'&&!confirm('This command is flagged as potentially destructive:\n\n'+c.command+'\n\nRun it anyway?'))return;
+      btn.disabled=true;btn.textContent='Running…';
+      const res=await runTermCommand(c.command);
+      btn.textContent='Ran';btn.classList.add('done');
+      if(res){results.push(res);if(assessBtn)assessBtn.disabled=false;}
+    };
     wrap.appendChild(row);
+  }
+  if(assessCtx){
+    assessBtn=document.createElement('button');assessBtn.className='runbtn';assessBtn.style.marginTop='4px';
+    assessBtn.textContent='Assess results with the agents';assessBtn.disabled=true;
+    assessBtn.onclick=async()=>{
+      if(!results.length){toast('Run at least one command first.','err');return;}
+      assessBtn.disabled=true;
+      const b=addMsg('mediator','grounded assessment','',false);b.innerHTML='<span class="spin"></span> Assessing the real output…';
+      try{const d=await api('/api/verify/assess',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(Object.assign({results},assessCtx))});
+        b.innerHTML=md(d.assessment);assessBtn.textContent='Assessed';assessBtn.classList.add('done');}
+      catch(e){b.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';assessBtn.disabled=false;}
+    };
+    wrap.appendChild(assessBtn);
   }
   return wrap;
 }

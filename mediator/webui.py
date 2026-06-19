@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import json
 import queue
+import secrets
 import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -98,6 +100,44 @@ def _ndjson(ev: dict) -> str:
     return json.dumps(ev) + "\n"
 
 
+def _chat_events(cfg: Config, root: Path, msgs: list[dict], use_tools: bool, search_fn):
+    """Run a tool-using, token-streamed assistant turn in a worker thread."""
+    from .client import LLMError as _LLMError, client_for_role
+    from .prompts import ASSISTANT_PROMPT
+    from .tools import WorkspaceTools, gather_with_tools
+
+    q: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        try:
+            client, model = client_for_role(cfg, "mediator")
+            temp = cfg.agent("mediator").temperature
+            convo = list(msgs)
+            if use_tools:
+                tools = WorkspaceTools(root, _SKIP_DIRS, search_fn=search_fn)
+                convo = gather_with_tools(client, model, temp, ASSISTANT_PROMPT, msgs,
+                                          tools, on_event=q.put)
+                convo = convo + [{"role": "user", "content":
+                                  "Now write your final answer to my latest question in "
+                                  "markdown, using the observations above. Cite file paths."}]
+            final = [{"role": "system", "content": ASSISTANT_PROMPT}] + convo
+            for delta in client.chat_stream(final, model=model, temperature=temp):
+                q.put({"type": "token", "text": delta})
+        except _LLMError as exc:
+            q.put({"type": "error", "message": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            q.put({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+        finally:
+            q.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+    while True:
+        ev = q.get()
+        if ev is None:
+            break
+        yield ev
+
+
 def _plan_dict(plan) -> dict:
     return {
         "name": plan.name,
@@ -137,6 +177,12 @@ class GenerateRequest(BaseModel):
     request: str = ""
 
 
+class EditRequest(BaseModel):
+    request: str = ""
+    path: str = ""
+    max_files: int = 24
+
+
 class PathRequest(BaseModel):
     path: str = ""
 
@@ -154,14 +200,97 @@ class TerminalRequest(BaseModel):
     command: str = ""
 
 
+class AssessRequest(BaseModel):
+    code: str = ""
+    filename: str = "snippet.txt"
+    task: str = "Review this code."
+    results: list[dict] = []
+
+
+class ChatMessage(BaseModel):
+    role: str = "user"
+    content: str = ""
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = []
+    use_tools: bool = True
+
+
+class GitPathsRequest(BaseModel):
+    paths: list[str] = []
+
+
+class GitCommitRequest(BaseModel):
+    message: str = ""
+
+
+class GitNameRequest(BaseModel):
+    name: str = ""
+
+
+class GitPushRequest(BaseModel):
+    set_upstream: bool = False
+    branch: str = ""
+
+
 MAX_SEARCH_RESULTS = 200
 _TEXT_EXTS = set(_MONACO_LANG.keys())
+
+# State-changing methods must carry a valid CSRF token (and, when present, a same-origin
+# header). This is the compensating control for the terminal/file-write endpoints: a
+# malicious page in the user's browser cannot read the token (same-origin policy) nor set
+# a custom header cross-origin without a CORS preflight this server never grants.
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_CSRF_PLACEHOLDER = "__CSRF_TOKEN__"
+
+
+def _origin_allowed(origin: str | None, host: str) -> bool:
+    """True if there is no Origin/Referer, or it matches the server's own host."""
+    if not origin:
+        return True  # non-browser / same-origin request without the header
+    netloc = urlparse(origin).netloc
+    return bool(netloc) and netloc == host
 
 
 def create_app(config_path: str = "config.toml") -> FastAPI:
     app = FastAPI(title="Mediator IDE")
     app.state.root = Path.cwd().resolve()
     app.state.term_proc = None
+    app.state.term_lock = threading.Lock()
+    app.state.csrf_token = secrets.token_urlsafe(32)
+    app.state.index = None
+    app.state.index_root = None
+
+    def _get_index(force: bool = False):
+        from .index import build_index
+        cur = app.state.root
+        if force or app.state.index is None or app.state.index_root != cur:
+            app.state.index = build_index(cur, _SKIP_DIRS, set(_MONACO_LANG))
+            app.state.index_root = cur
+        return app.state.index
+
+    def _search_fn():
+        def fn(query: str, k: int):
+            return _get_index().search(query, k)
+        return fn
+
+    def _invalidate_index():
+        app.state.index = None
+
+    @app.middleware("http")
+    async def _csrf_guard(request: Request, call_next):
+        if request.method in _UNSAFE_METHODS:
+            host = request.headers.get("host", "")
+            origin = request.headers.get("origin") or request.headers.get("referer")
+            if not _origin_allowed(origin, host):
+                return JSONResponse({"error": "Cross-origin request blocked."},
+                                    status_code=403)
+            token = request.headers.get("x-csrf-token", "")
+            if not secrets.compare_digest(token, request.app.state.csrf_token):
+                return JSONResponse({"error": "Missing or invalid CSRF token."},
+                                    status_code=403)
+        return await call_next(request)
 
     def _config():
         return load_config(config_path)
@@ -200,7 +329,8 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
     # -- pages ------------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
-        return (_STATIC / "index.html").read_text(encoding="utf-8")
+        html = (_STATIC / "index.html").read_text(encoding="utf-8")
+        return html.replace(_CSRF_PLACEHOLDER, app.state.csrf_token)
 
     # -- workspace / files ------------------------------------------------
     @app.get("/api/config")
@@ -236,6 +366,7 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
         if not p.is_dir():
             return JSONResponse({"error": f"Not a folder: {req.path}"}, status_code=400)
         app.state.root = p
+        _invalidate_index()
         return {"root": str(p), "entries": _list_dir(p)}
 
     @app.get("/api/tree")
@@ -269,6 +400,7 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
             target.write_text(req.content, encoding="utf-8")
         except OSError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
+        _invalidate_index()
         return {"saved": req.path}
 
     @app.post("/api/mkdir")
@@ -313,6 +445,40 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
                 except (UnicodeDecodeError, OSError):
                     pass
         return {"results": results}
+
+    @app.get("/api/search/semantic")
+    def search_semantic(q: str):
+        q = (q or "").strip()
+        if len(q) < 2:
+            return {"results": []}
+        hits = _get_index().search(q, 12)
+        return {"results": [{"path": p, "score": round(s, 2)} for p, s in hits]}
+
+    @app.post("/api/index/refresh")
+    def index_refresh():
+        idx = _get_index(force=True)
+        return {"files": len(idx.docs)}
+
+    @app.post("/api/chat/stream")
+    def chat_stream_ep(req: ChatRequest):
+        try:
+            cfg = _config()
+        except ConfigError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        msgs = [{"role": m.role, "content": m.content}
+                for m in req.messages if m.role in ("user", "assistant") and m.content.strip()]
+        if not msgs or msgs[-1]["role"] != "user":
+            return JSONResponse({"error": "The last message must be from the user."},
+                                status_code=400)
+        root: Path = app.state.root
+        search_fn = _search_fn()
+
+        def gen():
+            for ev in _chat_events(cfg, root, msgs, req.use_tools, search_fn):
+                yield _ndjson(ev)
+            yield _ndjson({"type": "done"})
+
+        return StreamingResponse(gen(), media_type="application/x-ndjson")
 
     # -- agents -----------------------------------------------------------
     @app.post("/api/refine")
@@ -507,6 +673,22 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
         return {"commands": [{"command": c.command, "why": c.why, "risk": c.risk}
                              for c in cmds]}
 
+    @app.post("/api/verify/assess")
+    def verify_assess(req: AssessRequest):
+        try:
+            cfg = _config()
+        except ConfigError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        if not req.results:
+            return JSONResponse({"error": "No command results to assess."}, status_code=400)
+        from .verify import assess_results
+        try:
+            text = assess_results(cfg, req.task, req.filename, req.code, req.results,
+                                  detect_language(Path(req.filename)))
+        except LLMError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"assessment": text}
+
     # -- project generation (Phase 11) -----------------------------------
     @app.post("/api/generate/plan")
     def generate_plan(req: GenerateRequest):
@@ -575,6 +757,251 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
 
         return StreamingResponse(gen(), media_type="application/x-ndjson")
 
+    # -- multi-file debated edits (Phase 13) -----------------------------
+    @app.post("/api/edit/stream")
+    def edit_stream(req: EditRequest):
+        try:
+            cfg = _config()
+        except ConfigError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        if not req.request.strip():
+            return JSONResponse({"error": "Describe the change to make."}, status_code=400)
+
+        root = _resolve(req.path) if req.path else app.state.root
+        if root is None or not root.is_dir():
+            return JSONResponse({"error": "Folder not found."}, status_code=400)
+
+        # Rank candidate files by relevance to the request (BM25), so big repos surface
+        # the right files instead of just the first N. Fall back to a plain walk.
+        from .index import build_index
+        ranked = build_index(root, _SKIP_DIRS, CODE_EXTS).search(req.request, req.max_files)
+        candidates: list[Path] = []
+        for rel, _score in ranked:
+            p = root / rel
+            try:
+                if p.is_file() and p.stat().st_size <= MAX_FILE_BYTES:
+                    candidates.append(p)
+            except OSError:
+                pass
+        if not candidates:
+            for p in sorted(root.rglob("*")):
+                rel_parts = p.relative_to(root).parts
+                if any(part in _SKIP_DIRS or part.startswith(".") for part in rel_parts):
+                    continue
+                if p.is_file() and p.suffix.lower() in CODE_EXTS:
+                    try:
+                        if p.stat().st_size <= MAX_FILE_BYTES:
+                            candidates.append(p)
+                    except OSError:
+                        pass
+                if len(candidates) >= req.max_files:
+                    break
+
+        def _read(path: Path) -> str:
+            try:
+                return path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                return ""
+
+        def gen():
+            from .edits import (ProposedFile, critique_changeset, draft_file,
+                                finalize_file, plan_changes, summarize_changeset,
+                                PLAN_SNIPPET_CHARS, CONTEXT_SNIPPET_CHARS, _truncate)
+
+            # Manifest of existing files for the planner.
+            rels = {str(p.relative_to(root)).replace("\\", "/"): p for p in candidates}
+            manifest = "\n\n".join(
+                f"### {rel}\n{_truncate(_read(p), PLAN_SNIPPET_CHARS)}"
+                for rel, p in rels.items()
+            ) or "(no existing code files found)"
+
+            yield _ndjson({"type": "thinking", "role": "pe", "round": 0})
+            try:
+                plan = plan_changes(cfg, req.request, manifest)
+            except LLMError as exc:
+                yield _ndjson({"type": "error", "message": str(exc)})
+                yield _ndjson({"type": "done"})
+                return
+
+            if not plan.changes:
+                yield _ndjson({"type": "report",
+                               "content": "The planner proposed no file changes. "
+                                          + (plan.summary or "")})
+                yield _ndjson({"type": "done"})
+                return
+
+            yield _ndjson({"type": "plan", "summary": plan.summary,
+                           "changes": [{"path": c.path, "action": c.action,
+                                        "reason": c.reason} for c in plan.changes]})
+
+            # 1) Author drafts each file.
+            proposed: list[ProposedFile] = []
+            for c in plan.changes:
+                target = _resolve(c.path)
+                if target is None:
+                    yield _ndjson({"type": "file_skip", "path": c.path,
+                                   "reason": "path escapes workspace"})
+                    continue
+                original = _read(target) if target.is_file() else ""
+                action = "modify" if original else "create"
+                yield _ndjson({"type": "file_thinking", "role": "author",
+                               "path": c.path, "action": action})
+                # Context: the other target files' current content (truncated).
+                others = []
+                for o in plan.changes:
+                    if o.path == c.path:
+                        continue
+                    ot = _resolve(o.path)
+                    if ot and ot.is_file():
+                        others.append(f"### {o.path}\n{_truncate(_read(ot), CONTEXT_SNIPPET_CHARS)}")
+                try:
+                    content = draft_file(cfg, req.request, plan, c, original,
+                                         "\n\n".join(others))
+                except LLMError as exc:
+                    yield _ndjson({"type": "file_error", "path": c.path, "message": str(exc)})
+                    continue
+                proposed.append(ProposedFile(c.path, action, original, content))
+                yield _ndjson({"type": "file_proposed", "path": c.path, "action": action})
+
+            if not proposed:
+                yield _ndjson({"type": "error", "message": "No files could be drafted."})
+                yield _ndjson({"type": "done"})
+                return
+
+            # 2) Adversary critiques the whole change set.
+            yield _ndjson({"type": "thinking", "role": "adversary", "round": 1})
+            try:
+                critique = critique_changeset(cfg, req.request, proposed)
+            except LLMError as exc:
+                critique = f"(Adversary unavailable: {exc})"
+            yield _ndjson({"type": "critique", "content": critique})
+
+            # 3) Mediator finalizes each file, applying the critique.
+            for pf in proposed:
+                change = next((c for c in plan.changes if c.path == pf.path), None)
+                if change is None:
+                    continue
+                yield _ndjson({"type": "file_finalizing", "role": "mediator",
+                               "path": pf.path})
+                try:
+                    final = finalize_file(cfg, req.request, change, pf.original,
+                                          pf.proposed, critique)
+                except LLMError as exc:
+                    yield _ndjson({"type": "file_error", "path": pf.path, "message": str(exc)})
+                    continue
+                yield _ndjson({"type": "file_final", "path": pf.path, "action": pf.action,
+                               "original": pf.original, "final": final})
+
+            # 4) Overall report.
+            yield _ndjson({"type": "overall_thinking"})
+            try:
+                report = summarize_changeset(cfg, req.request, proposed, critique)
+            except LLMError as exc:
+                report = f"(Could not produce report: {exc})"
+            yield _ndjson({"type": "report", "content": report})
+            yield _ndjson({"type": "done"})
+
+        return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+    # -- git / source control (Phase 18) ---------------------------------
+    @app.get("/api/git/status")
+    def git_status():
+        from . import gitops
+        root: Path = app.state.root
+        if not gitops.is_repo(root):
+            return {"repo": False}
+        try:
+            return {"repo": True, "branch": gitops.current_branch(root),
+                    "files": gitops.status(root)}
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.get("/api/git/diff")
+    def git_diff(path: str = "", staged: bool = False):
+        from . import gitops
+        try:
+            return {"diff": gitops.diff(app.state.root, path or None, staged)}
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.get("/api/git/branches")
+    def git_branches():
+        from . import gitops
+        try:
+            return {"branch": gitops.current_branch(app.state.root),
+                    "branches": gitops.branches(app.state.root)}
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.get("/api/git/log")
+    def git_log():
+        from . import gitops
+        try:
+            return {"log": gitops.log(app.state.root)}
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.post("/api/git/stage")
+    def git_stage(req: GitPathsRequest):
+        from . import gitops
+        try:
+            if req.paths:
+                gitops.stage(app.state.root, req.paths)
+            else:
+                gitops.stage_all(app.state.root)
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"ok": True}
+
+    @app.post("/api/git/unstage")
+    def git_unstage(req: GitPathsRequest):
+        from . import gitops
+        try:
+            gitops.unstage(app.state.root, req.paths)
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"ok": True}
+
+    @app.post("/api/git/commit")
+    def git_commit(req: GitCommitRequest):
+        from . import gitops
+        if not req.message.strip():
+            return JSONResponse({"error": "Commit message is required."}, status_code=400)
+        try:
+            out = gitops.commit(app.state.root, req.message.strip())
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"ok": True, "output": out.strip()}
+
+    @app.post("/api/git/branch")
+    def git_branch(req: GitNameRequest):
+        from . import gitops
+        if not req.name.strip():
+            return JSONResponse({"error": "Branch name is required."}, status_code=400)
+        try:
+            gitops.create_branch(app.state.root, req.name.strip())
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"ok": True, "branch": req.name.strip()}
+
+    @app.post("/api/git/checkout")
+    def git_checkout(req: GitNameRequest):
+        from . import gitops
+        try:
+            gitops.checkout(app.state.root, req.name.strip())
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"ok": True, "branch": req.name.strip()}
+
+    @app.post("/api/git/push")
+    def git_push(req: GitPushRequest):
+        from . import gitops
+        try:
+            out = gitops.push(app.state.root, req.set_upstream, req.branch or None)
+        except gitops.GitError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"ok": True, "output": out.strip()}
+
     # -- integrated terminal ---------------------------------------------
     # SECURITY: runs commands the USER types, in the workspace dir, on a
     # localhost-only server. The AI agents have NO terminal access (that is the
@@ -586,8 +1013,14 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
             return JSONResponse({"error": "Empty command."}, status_code=400)
         root: Path = app.state.root
 
-        def gen():
-            yield _ndjson({"type": "start", "command": cmd, "cwd": str(root)})
+        # Start the process synchronously under a lock so two requests can't clobber the
+        # single shared handle (which would break /api/terminal/stop and interleave output).
+        with app.state.term_lock:
+            existing = app.state.term_proc
+            if existing is not None and existing.poll() is None:
+                return JSONResponse(
+                    {"error": "A command is already running in the terminal."},
+                    status_code=409)
             try:
                 proc = subprocess.Popen(
                     cmd, shell=True, cwd=str(root),
@@ -595,17 +1028,20 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
                     text=True, bufsize=1, encoding="utf-8", errors="replace",
                 )
             except OSError as exc:
-                yield _ndjson({"type": "out", "data": f"Failed to start: {exc}\n"})
-                yield _ndjson({"type": "exit", "code": -1})
-                return
+                return JSONResponse({"error": f"Failed to start: {exc}"},
+                                    status_code=400)
             app.state.term_proc = proc
+
+        def gen():
+            yield _ndjson({"type": "start", "command": cmd, "cwd": str(root)})
             try:
                 for line in iter(proc.stdout.readline, ""):
                     yield _ndjson({"type": "out", "data": line})
                 proc.wait()
             finally:
                 code = proc.returncode
-                app.state.term_proc = None
+                if app.state.term_proc is proc:
+                    app.state.term_proc = None
             yield _ndjson({"type": "exit", "code": code})
 
         return StreamingResponse(gen(), media_type="application/x-ndjson")
