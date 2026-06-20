@@ -4,22 +4,62 @@ max_rounds = 3
 [lmstudio]
 timeout_seconds = 600
 
-[providers.local]
-base_url = "http://localhost:1234/v1"
-api_key = "lm-studio"
-is_local = true
+# Two OpenRouter providers, same endpoint, different API keys (in secrets.toml).
+# Agents are split across them to absorb per-key rate-limit spikes — especially the
+# 3-lens Adversary, which fires 3 calls back-to-back each round.
+[providers.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+is_local = false
 
+[providers.openrouter2]
+base_url = "https://openrouter.ai/api/v1"
+is_local = false
+
+# Google Gemini via the OpenAI-compatible endpoint — drops into the same client.
+[providers.gemini]
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+is_local = false
+
+# ── Key 1 (openrouter) — heavy roles ──────────────────────────────────────────
 [agents.author]
-provider = "local"
-model = ""
+provider = "openrouter"
+# Was gemini/gemini-3.5-flash but the free tier daily cap is only 20 requests/day,
+# which is too tight for repeated debates and builds. gpt-oss-120b is a strong free
+# coder on OpenRouter that's currently responsive. Swap back to Gemini in this file
+# whenever the daily quota resets if you prefer its 76.2% Terminal-Bench score.
+model = "openai/gpt-oss-120b:free"
 temperature = 0.4
 
+[agents.mediator]
+provider = "openrouter"
+model = "nvidia/nemotron-3-super-120b-a12b:free"
+temperature = 0.2
+
 [agents.adversary]
-provider = "local"
-model = ""
+provider = "openrouter"
+model = "nvidia/nemotron-3-nano-30b-a3b:free"
 temperature = 0.7
 
-[agents.mediator]
-provider = "local"
-model = ""
-temperature = 0.2
+[agents.adversary_security]   # 1 of 3 lenses on key 1
+provider = "openrouter"
+model = "nvidia/nemotron-3-nano-30b-a3b:free"
+temperature = 0.7
+
+# ── Key 2 (openrouter2) — lighter / split ────────────────────────────────────
+[agents.prompt_engineer]
+provider = "openrouter2"
+# Was google/gemma-4-31b-it:free which 429ed on Google AI Studio + OpenInference upstream.
+# gpt-oss-20b is small, fast, and responsive — well-suited to prompt refinement which
+# doesn't need a huge model.
+model = "openai/gpt-oss-20b:free"
+temperature = 0.3
+
+[agents.adversary_spec]       # 2 of 3 lenses on key 2
+provider = "openrouter2"
+model = "nvidia/nemotron-3-nano-30b-a3b:free"
+temperature = 0.7
+
+[agents.adversary_logic]      # 3 of 3 lenses on key 2
+provider = "openrouter2"
+model = "nvidia/nemotron-3-nano-30b-a3b:free"
+temperature = 0.7

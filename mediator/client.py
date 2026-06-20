@@ -8,11 +8,19 @@ cases, ``/v1/models``. Only the ``base_url`` and ``api_key`` differ.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Iterator
 
 import httpx
 
 from .config import Config, ProviderConfig
+
+# Transient upstream errors (429 throttling, 502/503/504 overload) are common on free
+# tiers; do a few short retries so a single hiccup doesn't fail an entire debate.
+_MAX_TRANSIENT_RETRIES = 3
+_RETRY_BACKOFFS = (3.0, 8.0, 18.0)
+_RETRY_AFTER_CAP = 30.0  # don't sleep longer than this even if the server suggests it
+_RETRYABLE_STATUS = {429, 502, 503, 504}
 
 
 class LLMError(RuntimeError):
@@ -72,28 +80,47 @@ class LLMClient:
             "messages": messages,
             "temperature": temperature,
         }
-        try:
-            resp = httpx.post(url, json=payload, headers=self._headers(),
-                              timeout=self.timeout_seconds)
-            resp.raise_for_status()
-        except httpx.ConnectError as exc:
+        last_err: Exception | None = None
+        for attempt in range(_MAX_TRANSIENT_RETRIES + 1):
+            try:
+                resp = httpx.post(url, json=payload, headers=self._headers(),
+                                  timeout=self.timeout_seconds)
+                # Transient upstream issue — wait and retry, capped.
+                if resp.status_code in _RETRYABLE_STATUS and attempt < _MAX_TRANSIENT_RETRIES:
+                    delay = _RETRY_BACKOFFS[attempt]
+                    try:
+                        delay = min(float(resp.headers.get("retry-after", delay)),
+                                    _RETRY_AFTER_CAP)
+                    except (TypeError, ValueError):
+                        pass
+                    time.sleep(delay)
+                    continue
+                resp.raise_for_status()
+                break
+            except httpx.ConnectError as exc:
+                raise LLMError(
+                    f"Could not connect to {self.label} at {self.base_url}. "
+                    "Is the server running / the base_url correct?"
+                ) from exc
+            except httpx.TimeoutException as exc:
+                raise LLMError(
+                    f"{self.label} did not respond within {self.timeout_seconds}s."
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                detail = exc.response.text
+                if exc.response.status_code in (401, 403):
+                    detail = "Authentication failed — check the API key for this provider."
+                raise LLMError(
+                    f"{self.label} returned HTTP {exc.response.status_code}: {detail}"
+                ) from exc
+            except httpx.HTTPError as exc:
+                last_err = exc
+                raise LLMError(f"Request to {url} failed: {exc}") from exc
+        else:  # exhausted retries; resp is the last transient failure
             raise LLMError(
-                f"Could not connect to {self.label} at {self.base_url}. "
-                "Is the server running / the base_url correct?"
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise LLMError(
-                f"{self.label} did not respond within {self.timeout_seconds}s."
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            detail = exc.response.text
-            if exc.response.status_code in (401, 403):
-                detail = "Authentication failed — check the API key for this provider."
-            raise LLMError(
-                f"{self.label} returned HTTP {exc.response.status_code}: {detail}"
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise LLMError(f"Request to {url} failed: {exc}") from exc
+                f"{self.label} returned HTTP {resp.status_code} after "
+                f"{_MAX_TRANSIENT_RETRIES} retries: {resp.text[:300]}"
+            )
 
         data = resp.json()
         try:

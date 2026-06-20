@@ -100,7 +100,8 @@ def _ndjson(ev: dict) -> str:
     return json.dumps(ev) + "\n"
 
 
-def _chat_events(cfg: Config, root: Path, msgs: list[dict], use_tools: bool, search_fn):
+def _chat_events(cfg: Config, root: Path, msgs: list[dict], use_tools: bool, search_fn,
+                 use_web: bool = False):
     """Run a tool-using, token-streamed assistant turn in a worker thread."""
     from .client import LLMError as _LLMError, client_for_role
     from .prompts import ASSISTANT_PROMPT
@@ -109,17 +110,30 @@ def _chat_events(cfg: Config, root: Path, msgs: list[dict], use_tools: bool, sea
     q: queue.Queue = queue.Queue()
 
     def work() -> None:
+        mcp = None
         try:
-            client, model = client_for_role(cfg, "mediator")
-            temp = cfg.agent("mediator").temperature
+            client, model = client_for_role(cfg, "assistant")
+            temp = cfg.agent("assistant").temperature
+            # Emit an immediate "started" event so the UI gets observable feedback well
+            # before the first model response arrives (thinking models can stall ~10-20s).
+            q.put({"type": "started", "model": model, "use_tools": use_tools,
+                   "use_web": use_web, "use_mcp": bool(cfg.mcp_servers)})
             convo = list(msgs)
             if use_tools:
-                tools = WorkspaceTools(root, _SKIP_DIRS, search_fn=search_fn)
+                if cfg.mcp_servers:
+                    from .mcp_client import MCPManager
+                    mcp = MCPManager(list(cfg.mcp_servers.values()), cwd=root)
+                    mcp.start_all()
+                    for err in mcp.errors:
+                        q.put({"type": "tool", "action": "mcp-error", "target": err})
+                tools = WorkspaceTools(root, _SKIP_DIRS, search_fn=search_fn,
+                                       allow_web=use_web, mcp=mcp)
                 convo = gather_with_tools(client, model, temp, ASSISTANT_PROMPT, msgs,
                                           tools, on_event=q.put)
                 convo = convo + [{"role": "user", "content":
                                   "Now write your final answer to my latest question in "
-                                  "markdown, using the observations above. Cite file paths."}]
+                                  "markdown, using the observations above. Cite file paths "
+                                  "and any web sources you used."}]
             final = [{"role": "system", "content": ASSISTANT_PROMPT}] + convo
             for delta in client.chat_stream(final, model=model, temperature=temp):
                 q.put({"type": "token", "text": delta})
@@ -128,6 +142,8 @@ def _chat_events(cfg: Config, root: Path, msgs: list[dict], use_tools: bool, sea
         except Exception as exc:  # noqa: BLE001
             q.put({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
         finally:
+            if mcp is not None:
+                mcp.stop_all()
             q.put(None)
 
     threading.Thread(target=work, daemon=True).start()
@@ -215,6 +231,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage] = []
     use_tools: bool = True
+    use_web: bool = False
 
 
 class GitPathsRequest(BaseModel):
@@ -344,6 +361,7 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
             "max_rounds": cfg.max_rounds,
             "has_cloud": cfg.has_cloud_agent(),
             "root": str(app.state.root),
+            "mcp_servers": [name for name, s in cfg.mcp_servers.items() if not s.disabled],
             "agents": {
                 r: {
                     "provider": cfg.agent(r).provider,
@@ -474,7 +492,7 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
         search_fn = _search_fn()
 
         def gen():
-            for ev in _chat_events(cfg, root, msgs, req.use_tools, search_fn):
+            for ev in _chat_events(cfg, root, msgs, req.use_tools, search_fn, req.use_web):
                 yield _ndjson(ev)
             yield _ndjson({"type": "done"})
 
@@ -718,12 +736,26 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
         def gen():
             from .scaffold import plan_project, generate_file
             from .verify import classify_risk
+
+            # Architect inherits from mediator; surface its model so the UI can show
+            # "Architect is thinking with X" while plan_project() blocks (10-30s on
+            # thinking models). Same pattern for the per-file Builder calls below.
+            architect_model = cfg.agent("architect").model or "auto"
+            builder_model = cfg.agent("builder").model or "auto"
+
+            yield _ndjson({"type": "stage", "phase": "start", "stage": "architect",
+                           "label": "Architect", "detail": "Planning the project",
+                           "model": architect_model})
             try:
                 plan = plan_project(cfg, req.request)
             except LLMError as exc:
+                yield _ndjson({"type": "stage", "phase": "error", "stage": "architect",
+                               "message": str(exc)})
                 yield _ndjson({"type": "error", "message": str(exc)})
                 yield _ndjson({"type": "done"})
                 return
+            yield _ndjson({"type": "stage", "phase": "done", "stage": "architect",
+                           "summary": f"Planned {plan.name} · {len(plan.files)} file(s)"})
 
             proj_dir = (root / plan.name).resolve()
             yield _ndjson({"type": "plan", **_plan_dict(plan), "folder": plan.name})
@@ -736,14 +768,24 @@ def create_app(config_path: str = "config.toml") -> FastAPI:
                                    "reason": "path escapes workspace"})
                     continue
                 rel = str(target.relative_to(root)).replace("\\", "/")
+                stage_id = f"build:{rel}"
+                yield _ndjson({"type": "stage", "phase": "start", "stage": "builder",
+                               "id": stage_id, "label": "Builder",
+                               "detail": f"Writing {rel}", "model": builder_model,
+                               "path": rel})
                 yield _ndjson({"type": "file_writing", "path": rel, "purpose": spec.purpose})
                 try:
                     content = generate_file(cfg, req.request, plan, spec)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(content, encoding="utf-8")
                 except (LLMError, OSError) as exc:
+                    yield _ndjson({"type": "stage", "phase": "error", "stage": "builder",
+                                   "id": stage_id, "path": rel, "message": str(exc)})
                     yield _ndjson({"type": "file_error", "path": rel, "message": str(exc)})
                     continue
+                yield _ndjson({"type": "stage", "phase": "done", "stage": "builder",
+                               "id": stage_id, "path": rel,
+                               "summary": f"{rel} · {len(content)} B"})
                 yield _ndjson({"type": "file_written", "path": rel, "bytes": len(content)})
 
             # Setup/run commands are PROPOSALS — the user approves & runs them.

@@ -75,6 +75,16 @@ Everything below works from the web IDE (`python -m mediator web`), and the core
 
 **Asking & exploring**
 - **Ask (chat)** — a normal back-and-forth chat about your codebase. It reads and searches your actual files to answer, remembers the conversation, and streams its reply word by word.
+- **Web access** — flip the **Web** toggle in Ask and the assistant can search the web and fetch pages to ground its answers in current information (SSRF-guarded; fetched content is treated as untrusted).
+- **MCP tools** — point Mediator at any [Model Context Protocol](https://modelcontextprotocol.io) server in `config.toml` and its tools become available to the assistant. Example:
+  ```toml
+  [mcp.servers.fetch]
+  command = "uvx"
+  args = ["mcp-server-fetch"]
+  # env = { API_KEY = "…" }
+  # disabled = false
+  ```
+  Servers are started on demand and every tool call is shown live in the chat. Only add servers you trust — MCP tools run on your machine.
 - **Code search** — fast keyword search plus a smarter "find the most relevant files" search across the project.
 
 **Running & verifying**

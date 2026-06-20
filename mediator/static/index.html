@@ -153,12 +153,12 @@
   .term-input input:focus{outline:none;}
 
   /* chat */
-  .chat{display:flex;flex-direction:column;background:var(--panel);min-width:0;border-left:1px solid var(--line);}
+  .chat{display:flex;flex-direction:column;background:var(--panel);min-width:0;min-height:0;border-left:1px solid var(--line);}
   .chat-hd{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);}
   .chat-hd .av{width:30px;height:30px;border-radius:9px;background:var(--grad);display:grid;place-items:center;
        font-size:14px;box-shadow:var(--glow);}
   .chat-hd .t{font-weight:700;} .chat-hd .s{color:var(--muted);font-size:11.5px;}
-  .msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:16px;}
+  .msgs{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:18px;display:flex;flex-direction:column;gap:16px;}
   .empty-chat{margin:auto;text-align:center;color:var(--faint);display:flex;flex-direction:column;gap:10px;align-items:center;}
   .empty-chat .ic{width:48px;height:48px;border-radius:14px;background:var(--elev2);display:grid;place-items:center;font-size:22px;}
   .msg{display:flex;gap:11px;animation:rise .28s cubic-bezier(.2,.7,.3,1);}
@@ -166,7 +166,8 @@
   .msg .icon{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;font-size:12px;font-weight:800;color:#06080d;}
   .msg .body{flex:1;min-width:0;}
   .msg .who{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
-  .msg .bubble{background:var(--elev);border:1px solid var(--line);border-radius:12px;padding:11px 13px;overflow:auto;}
+  .msg .bubble{background:var(--elev);border:1px solid var(--line);border-radius:12px;padding:11px 13px;
+       overflow-x:auto;overflow-wrap:anywhere;word-break:break-word;max-width:100%;}
   .msg .bubble p{margin:.35em 0;} .msg .bubble ul,.msg .bubble ol{margin:.35em 0;padding-left:1.3em;}
   .msg .bubble pre{background:#06080d !important;border:1px solid var(--line);border-radius:9px;padding:11px;overflow:auto;margin:.5em 0;}
   .msg .bubble code{font-family:var(--mono);font-size:12.5px;}
@@ -287,6 +288,36 @@
   .fwhere{font-family:var(--mono);font-size:11px;color:var(--accent);margin-top:2px;}
   .fdetail{font-size:12px;color:var(--muted);margin-top:3px;}
   .ffix{font-size:12px;color:var(--green);margin-top:3px;}
+
+  /* refined prompt accept/reject card */
+  .pe-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);}
+  .pe-actions .hint{flex:1;font-size:11.5px;color:var(--faint);align-self:center;}
+
+  /* stage cards: live "X is thinking with model Y" indicators that auto-collapse */
+  .stage{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:11px;
+       border:1px solid var(--glass-line);background:rgba(3,4,9,.45);
+       -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+       transition:padding .18s ease,background .18s ease;}
+  .stage.thinking{border-color:rgba(124,139,255,.45);box-shadow:0 0 0 1px rgba(124,139,255,.2),0 8px 22px rgba(124,110,255,.12);}
+  .stage.done{padding:7px 12px;background:rgba(3,4,9,.30);}
+  .stage.error{border-color:rgba(255,107,129,.55);background:rgba(60,8,20,.32);}
+  .stage .row{display:flex;align-items:center;gap:9px;}
+  .stage .icon{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px;flex:none;}
+  .stage.thinking .icon{background:var(--grad);color:#fff;animation:pulse 1.4s ease-in-out infinite;}
+  .stage.done .icon{background:rgba(66,211,146,.18);color:var(--green);}
+  .stage.error .icon{background:rgba(255,107,129,.20);color:var(--red);}
+  @keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(124,139,255,.45);}50%{transform:scale(1.05);box-shadow:0 0 0 6px rgba(124,139,255,0);}}
+  .stage .label{font-weight:700;font-size:12.5px;letter-spacing:.02em;color:#eaeef6;}
+  .stage .detail{flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .stage.done .detail{color:var(--green);}
+  .stage.error .detail{color:var(--red);}
+  .stage .model{font-family:var(--mono);font-size:10.5px;color:var(--accent);background:var(--glass-soft);
+       padding:2px 7px;border-radius:6px;border:1px solid var(--glass-line);flex:none;}
+  .stage .timer{font-family:var(--mono);font-size:10.5px;color:var(--faint);flex:none;}
+  .stage .toggle{cursor:pointer;color:var(--faint);font-size:11px;flex:none;}
+  .stage .toggle:hover{color:var(--text);}
+  .stage .body{display:none;font-size:11.5px;color:var(--muted);padding-left:31px;}
+  .stage.expanded .body{display:block;}
 
   /* ============================================================
      GLASSMORPHISM THEME  — frosted panels, depth, vivid accents
@@ -468,7 +499,8 @@
             <div class="opts">
               <div class="seg" id="scopeSeg"><button class="on" data-scope="file">This file</button><button data-scope="ask">Ask</button><button data-scope="folder">Folder</button><button data-scope="edit">Edit</button><button data-scope="build">Build app</button></div>
               <label id="refineToggle"><span class="switch" id="refineSw"></span> Refine</label>
-              <label>Rounds <input type="number" id="rounds" min="1" max="6" value="2"/></label>
+              <label id="webToggle" class="hidden"><span class="switch" id="webSw"></span> Web</label>
+              <label id="roundsLabel">Rounds <input type="number" id="rounds" min="1" max="6" value="2"/></label>
             </div>
             <div class="send">
               <button class="btn ghost sm" id="verifyBtn">Verify</button>
@@ -743,10 +775,16 @@ function addMsg(role,label,text,isMd){const ec=$('#emptyChat');if(ec)ec.remove()
   $('#msgs').appendChild(m);$('#msgs').scrollTop=$('#msgs').scrollHeight;return m.querySelector('.bubble');}
 const refineState={on:false};
 $('#refineToggle').onclick=()=>{refineState.on=!refineState.on;$('#refineSw').classList.toggle('on',refineState.on);};
+const webState={on:false};
+$('#webToggle').onclick=()=>{webState.on=!webState.on;$('#webSw').classList.toggle('on',webState.on);};
 let scope='file';
 $$('#scopeSeg button').forEach(b=>b.onclick=()=>{scope=b.dataset.scope;$$('#scopeSeg button').forEach(x=>x.classList.toggle('on',x===b));
   $('#reviewBtn').textContent=scope==='folder'?'Review folder':(scope==='build'?'Build app':(scope==='edit'?'Make changes':(scope==='ask'?'Ask':'Review file')));
   $('#verifyBtn').style.display=(scope==='build'||scope==='edit'||scope==='ask')?'none':'';
+  const ask=scope==='ask';
+  $('#webToggle').classList.toggle('hidden',!ask);
+  $('#refineToggle').classList.toggle('hidden',ask);
+  $('#roundsLabel').classList.toggle('hidden',ask||scope==='build');
   $('#prompt').placeholder=scope==='build'?'Describe the app to build… e.g. a Flask todo API with SQLite':
     (scope==='edit'?'Describe the change across the project… e.g. add structured request logging to every API route':
     (scope==='ask'?'Ask about your codebase… e.g. how does authentication work here?':'Ask the agents…'));});
@@ -756,26 +794,67 @@ const askHistory=[];
 async function runAsk(text){
   askHistory.push({role:'user',content:text});
   addMsg('user','you',text);
+  const promptEl=$('#prompt');const savedText=promptEl.value;
+  promptEl.value='';promptEl.disabled=true;
   const bubble=addMsg('mediator','assistant','',false);
-  bubble.innerHTML='<div class="toollog"></div><div class="ans"><span class="spin"></span> Thinking…</div>';
+  bubble.innerHTML='<div class="toollog"></div><div class="ans"><span class="spin"></span> Sending…</div>';
   const tl=bubble.querySelector('.toollog'),ans=bubble.querySelector('.ans');
   let acc='',started=false;
   try{
-    await streamNDJSON('/api/chat/stream',{messages:askHistory,use_tools:true},ev=>{
-      if(ev.type==='tool'){const t=document.createElement('div');t.className='toolline';
+    await streamNDJSON('/api/chat/stream',{messages:askHistory,use_tools:true,use_web:webState.on},ev=>{
+      if(ev.type==='started'){
+        const bits=[];if(ev.use_tools)bits.push('tools');if(ev.use_web)bits.push('web');if(ev.use_mcp)bits.push('mcp');
+        const tail=bits.length?' · '+bits.join(' · '):'';
+        ans.innerHTML='<span class="spin"></span> Thinking with <code>'+esc(ev.model||'?')+'</code>'+tail+'…';
+      }
+      else if(ev.type==='tool'){const t=document.createElement('div');t.className='toolline';
         t.textContent='🔧 '+ev.action+(ev.target?' · '+ev.target:'');tl.appendChild(t);}
       else if(ev.type==='token'){if(!started){ans.innerHTML='';started=true;}acc+=ev.text;ans.innerHTML=md(acc);$('#msgs').scrollTop=$('#msgs').scrollHeight;}
       else if(ev.type==='error'){ans.innerHTML='<span style="color:var(--red)">'+esc(ev.message)+'</span>';}
     });
   }catch(e){ans.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';}
+  promptEl.disabled=false;
+  if(!started&&!acc){promptEl.value=savedText;}  // restore on early failure so user can retry
   if(acc)askHistory.push({role:'assistant',content:acc});
   else askHistory.pop();
+  promptEl.focus();
 }
 $('#prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();$('#reviewBtn').click();}});
-$('#promptBtn').onclick=async()=>{const text=$('#prompt').value.trim();if(!text)return;addMsg('user','you',text);
+$('#promptBtn').onclick=async()=>{const text=$('#prompt').value.trim();if(!text)return;
+  addMsg('user','you',text);
+  const original=text;
   const b=addMsg('pe','prompt engineer','',false);b.innerHTML='<span class="spin"></span> Refining…';
-  try{const d=await api('/api/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});b.innerHTML=md(d.refined);}
-  catch(e){b.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';}};
+  try{
+    const d=await api('/api/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    b.innerHTML=md(d.refined);
+    appendAcceptReject(b,d.refined,original);
+  }catch(e){b.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';}
+};
+
+/* Append Accept/Reject controls to a refined-prompt bubble.
+   Accept -> auto-fire the Build flow with the refined brief (the Author/Builder
+   takes over). Reject -> restore the user's original text into the prompt input. */
+function appendAcceptReject(bubble, refined, originalText){
+  const row=document.createElement('div');row.className='pe-actions';
+  row.innerHTML='<span class="hint">Send this brief to the Author to build the app, or reject and edit your prompt.</span>'+
+    '<button class="btn ghost sm" data-act="reject">Reject</button>'+
+    '<button class="btn sm" data-act="accept">Accept &amp; build</button>';
+  const accept=row.querySelector('[data-act="accept"]');
+  const reject=row.querySelector('[data-act="reject"]');
+  accept.onclick=()=>{
+    accept.disabled=true;reject.disabled=true;
+    accept.textContent='Sent to Author';
+    addMsg('user','you','Build: (refined brief above)');
+    streamNDJSON('/api/generate/stream',{request:refined},makeGenHandler())
+      .catch(err=>toast('Build failed: '+esc(err.message),'err'));
+  };
+  reject.onclick=()=>{
+    $('#prompt').value=originalText;$('#prompt').focus();
+    row.innerHTML='<span class="hint">Rejected — your original prompt is back in the input.</span>';
+  };
+  bubble.appendChild(row);
+  $('#msgs').scrollTop=$('#msgs').scrollHeight;
+}
 
 /* Verify: agents PROPOSE commands; user approves & runs each in the terminal */
 $('#verifyBtn').onclick=async()=>{
@@ -861,7 +940,11 @@ async function streamNDJSON(url,body,onEvent){
 function makeHandler(ctx){let pending=null;
   return ev=>{const tag=ev.file?esc(ev.file)+' · ':'';
     switch(ev.type){
-      case 'refined':addMsg('pe','refined task',ev.task,true);break;
+      case 'refined':{
+        const m=addMsg('pe','refined task','',false);m.innerHTML=md(ev.task);
+        // Streaming refines belong to an in-flight debate/build, so showing Accept here
+        // would be confusing — the agents are already working on it.
+        break;}
       case 'thinking':{const lensTag=ev.lens?ev.lens+' lens · ':'';
         const b=addMsg(ev.role,tag+lensTag+ev.role+' · round '+ev.round,'',false);
         b.innerHTML='<span class="spin"></span> '+(ev.lens?ev.lens+' lens analyzing…':ev.role+' is thinking…');
@@ -926,26 +1009,80 @@ $('#reviewBtn').onclick=async()=>{const task=$('#prompt').value.trim()||'Review 
 function makeGenHandler(){
   return ev=>{
     switch(ev.type){
+      case 'stage':stageEvent(ev);break;
       case 'plan':{
         const files=(ev.files||[]).map(f=>'- `'+f.path+'` — '+esc(f.purpose||'')).join('\n');
         addMsg('pe','build plan',`**${ev.name}**  ·  _${ev.stack}_\n\n${files}`,true);break;}
-      case 'file_writing':{const h=document.createElement('div');h.className='filehdr';
-        h.innerHTML='<span class="spin"></span>'+fileIco(ev.path.split('/').pop())+'<b>'+esc(ev.path)+'</b>';
-        h.id='gen-'+btoa(unescape(encodeURIComponent(ev.path))).replace(/=/g,'');
-        $('#msgs').appendChild(h);$('#msgs').scrollTop=$('#msgs').scrollHeight;break;}
-      case 'file_written':{const id='gen-'+btoa(unescape(encodeURIComponent(ev.path))).replace(/=/g,'');
-        const h=document.getElementById(id);
-        if(h){h.innerHTML='<span style="color:var(--green)">✓</span>'+fileIco(ev.path.split('/').pop())+
-          '<b>'+esc(ev.path)+'</b><span class="ix">'+ev.bytes+' B</span>';
-          h.style.cursor='pointer';h.onclick=()=>openFile(ev.path);}break;}
+      case 'file_writing':break;   // covered by the live stage card
+      case 'file_written':{
+        // Make the completed file clickable to open it.
+        const s=stages['build:'+ev.path];
+        if(s){s.root.style.cursor='pointer';s.root.onclick=e=>{
+          if(!e.target.classList.contains('toggle'))openFile(ev.path);};}
+        break;}
       case 'file_skip':addMsg('sys','skipped',ev.path+' ('+ev.reason+')',false);break;
-      case 'file_error':addMsg('sys','error',ev.path+': '+ev.message,false);break;
+      case 'file_error':break;     // covered by stage error
       case 'commands':{const b=addMsg('verifier','setup & run','',false);
         b.innerHTML='';b.appendChild(approvalCard(ev.commands,'Project built. Approve commands to install & run it — nothing runs automatically.'));break;}
       case 'error':addMsg('sys','error',ev.message,false);break;
       case 'done':{$('#tree').innerHTML='';loadTree('',$('#tree'));
         addMsg('sys','done','Project generated in folder "'+(ev.folder||'')+'". Review the files, then approve the commands above.',false);break;}
     }};}
+/* Stage card: a live "X is thinking with model Y" indicator that swaps to a one-line
+   "X done · summary" when the step finishes. Click the chevron to expand details. */
+const stages={};  // id -> {root,labelEl,detailEl,modelEl,timerEl,bodyEl,timer,startMs}
+function stageCreate(id,opts){
+  const ec=$('#emptyChat');if(ec)ec.remove();
+  const root=document.createElement('div');root.className='stage thinking';
+  root.innerHTML=
+    '<div class="row">'+
+      '<span class="icon">'+(opts.iconText||'★')+'</span>'+
+      '<span class="label"></span>'+
+      '<span class="detail"></span>'+
+      '<span class="model"></span>'+
+      '<span class="timer">0s</span>'+
+      '<span class="toggle" title="Show details">▾</span>'+
+    '</div>'+
+    '<div class="body"></div>';
+  const labelEl=root.querySelector('.label'),detailEl=root.querySelector('.detail'),
+        modelEl=root.querySelector('.model'),timerEl=root.querySelector('.timer'),
+        bodyEl=root.querySelector('.body'),toggle=root.querySelector('.toggle');
+  labelEl.textContent=opts.label||'Working';
+  detailEl.textContent=opts.detail||'';
+  if(opts.model){modelEl.textContent=opts.model;}else{modelEl.style.display='none';}
+  toggle.onclick=()=>root.classList.toggle('expanded');
+  $('#msgs').appendChild(root);$('#msgs').scrollTop=$('#msgs').scrollHeight;
+  const startMs=Date.now();
+  const timer=setInterval(()=>{
+    const s=Math.round((Date.now()-startMs)/1000);
+    timerEl.textContent=s<60?s+'s':Math.floor(s/60)+'m'+(s%60).toString().padStart(2,'0')+'s';
+  },500);
+  stages[id]={root,labelEl,detailEl,modelEl,timerEl,bodyEl,timer,startMs};
+  return stages[id];
+}
+function stageDone(id,summary){
+  const s=stages[id];if(!s)return;clearInterval(s.timer);
+  s.root.classList.remove('thinking');s.root.classList.add('done');
+  s.root.querySelector('.icon').textContent='✓';
+  if(summary)s.detailEl.textContent=summary;
+  const elapsed=Math.round((Date.now()-s.startMs)/1000);
+  s.timerEl.textContent='✓ '+(elapsed<60?elapsed+'s':Math.floor(elapsed/60)+'m'+(elapsed%60).toString().padStart(2,'0')+'s');
+}
+function stageError(id,message){
+  const s=stages[id];if(!s){return stageCreate(id,{label:'Error',detail:message});}
+  clearInterval(s.timer);
+  s.root.classList.remove('thinking');s.root.classList.add('error');
+  s.root.querySelector('.icon').textContent='!';
+  s.detailEl.textContent=message;s.timerEl.textContent='';
+}
+function stageEvent(ev){
+  // server emits {type:'stage', phase, stage, id?, label, detail, model, summary, message, path}
+  const id=ev.id||ev.path||ev.stage;
+  if(ev.phase==='start')stageCreate(id,{label:ev.label,detail:ev.detail,model:ev.model,iconText:'★'});
+  else if(ev.phase==='done')stageDone(id,ev.summary);
+  else if(ev.phase==='error')stageError(id,ev.message||'failed');
+}
+
 /* multi-file debated edits (Phase 13) */
 function makeEditHandler(){
   let pending=null;const finals=[];

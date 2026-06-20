@@ -68,9 +68,20 @@ class AgentConfig:
 
 
 @dataclass
+class MCPServerConfig:
+    name: str
+    command: str
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    disabled: bool = False
+    auto_approve: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Config:
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
     agents: dict[str, AgentConfig] = field(default_factory=dict)
+    mcp_servers: dict[str, MCPServerConfig] = field(default_factory=dict)
     max_rounds: int = 3
     timeout_seconds: float = 120.0
 
@@ -140,9 +151,25 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> Config:
     lm_raw = data.get("lmstudio", {})  # legacy/back-compat for timeout
     timeout = float(lm_raw.get("timeout_seconds", 120.0))
 
+    # MCP servers (optional) -----------------------------------------------
+    mcp_servers: dict[str, MCPServerConfig] = {}
+    for name, cfg in data.get("mcp", {}).get("servers", {}).items():
+        cmd = cfg.get("command", "")
+        if not cmd:
+            continue
+        mcp_servers[name] = MCPServerConfig(
+            name=name,
+            command=cmd,
+            args=[str(a) for a in cfg.get("args", [])],
+            env={str(k): str(v) for k, v in cfg.get("env", {}).items()},
+            disabled=bool(cfg.get("disabled", False)),
+            auto_approve=[str(a) for a in cfg.get("autoApprove", cfg.get("auto_approve", []))],
+        )
+
     config = Config(
         providers=providers,
         agents=agents,
+        mcp_servers=mcp_servers,
         max_rounds=int(debate_raw.get("max_rounds", 3)),
         timeout_seconds=timeout,
     )

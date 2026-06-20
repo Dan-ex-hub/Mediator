@@ -284,6 +284,38 @@ turns, a grouped findings event with correct counts and severity ordering, and a
 category-weighed Mediator verdict; the findings parser handles header rows, NO_ISSUES, and
 severity sorting; JS passes `node --check`).
 
+## Phase 20 — Web Access for Agents  ✅ DONE
+**Goal:** let the assistant reach the internet for current information.
+
+- `mediator/webtools.py`: `fetch_url` (download a page, strip HTML to text) and
+  `web_search` (keyless DuckDuckGo HTML search). Both are **SSRF-guarded** — requests to
+  private/loopback/link-local/metadata addresses are refused and redirects re-validated
+  each hop; sizes and time are bounded; fetched content is treated as untrusted.
+- Exposed through the agent tool-loop as `web_search` / `fetch_url`, gated by a **Web**
+  toggle in the Ask chat (`use_web`). Off by default (privacy).
+
+**Done when:** the assistant can search and read the web on demand. ✅ Verified (SSRF guard
+blocks localhost/metadata/`file://`, HTML→text strips scripts; tool parsing + gated
+instructions tested; live network unavailable in CI).
+
+## Phase 21 — MCP Client  ✅ DONE
+**Goal:** Kiro-style extensibility — use any Model Context Protocol server's tools.
+
+- `mediator/mcp_client.py`: a compact, pure-stdlib MCP client over the **stdio**
+  transport (newline-delimited JSON-RPC 2.0) with a background reader thread, plus an
+  `MCPManager` that starts configured servers, aggregates their tools as `server.tool`,
+  routes calls, and shuts them down.
+- Configured in `config.toml` under `[mcp.servers.<name>]` (command/args/env/disabled/
+  autoApprove). Tools are injected into the same agent tool-loop and used by the Ask
+  assistant; each call surfaces as a live tool event.
+- Safety: only user-configured servers start; they run as child processes of the
+  localhost-only web server; every call is visible.
+
+**Done when:** the assistant can call tools from a configured MCP server. ✅ Verified
+(full initialize → tools/list → tools/call round-trip against a mock stdio server; the
+tool loop dispatches an MCP call and feeds the observation back; config parses
+`[mcp.servers.*]`).
+
 ## Cross-cutting concerns
 - **Safety:** sandbox isolation, explicit opt-in for execution, confirmation for
   destructive actions, never run untrusted generated code on the host.

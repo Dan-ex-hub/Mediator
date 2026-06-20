@@ -152,7 +152,9 @@ def _setup_per_agent(console: Console, config_path: Path) -> None:
     _ensure_gitignore()
 
     cloud = any(not p["is_local"] for p in providers.values())
-    _print_done(console, mode="Per-agent (mixed local + cloud)", cloud=cloud)
+    local = any(p["is_local"] for p in providers.values())
+    label = "Per-agent (mixed local + cloud)" if local else "Per-agent (all cloud)"
+    _print_done(console, mode=label, cloud=cloud, local=local)
 
 
 def _write_config(path: Path, providers: dict[str, dict], agents: dict[str, dict],
@@ -231,7 +233,7 @@ def run_setup(console: Console, config_path: Path = Path("config.toml")) -> int:
         _write_config(config_path, providers, agents)
         _write_secret(name, api_key)
         _ensure_gitignore()
-        _print_done(console, mode="Reasoning (cloud)", cloud=True)
+        _print_done(console, mode="Reasoning (cloud)", cloud=True, local=False)
 
     elif choice == "3":  # Hybrid
         console.print("\nMediator (the final reviewer) will use the cloud.")
@@ -248,27 +250,30 @@ def run_setup(console: Console, config_path: Path = Path("config.toml")) -> int:
         _write_config(config_path, providers, agents)
         _write_secret(name, api_key)
         _ensure_gitignore()
-        _print_done(console, mode="Hybrid (local + cloud Mediator)", cloud=True)
+        _print_done(console, mode="Hybrid (local + cloud Mediator)", cloud=True, local=True)
 
     else:  # Privacy — all local
         providers = {"local": local_provider}
         agents = {r: {"provider": "local", "model": "", "temperature": TEMPS[r]} for r in ROLES}
         _write_config(config_path, providers, agents)
         _ensure_gitignore()
-        _print_done(console, mode="Privacy (100% local)", cloud=False)
+        _print_done(console, mode="Privacy (100% local)", cloud=False, local=True)
 
     return 0
 
 
-def _print_done(console: Console, mode: str, cloud: bool) -> None:
+def _print_done(console: Console, mode: str, cloud: bool, local: bool) -> None:
     console.print(f"\n[bold green]Setup complete:[/bold green] {mode}")
     console.print(f"Wrote [bold]config.toml[/bold].")
     if cloud:
         console.print("Wrote [bold]secrets.toml[/bold] (gitignored) with your API key.")
-    if "local" in mode.lower() or "hybrid" in mode.lower():
+    if local:
         console.print(
             "\n[bold]Local model setup (LM Studio):[/bold]\n"
             "  1. Open LM Studio and download a model (e.g. Qwen2.5 Coder 7B, Q4_K_M).\n"
             "  2. Go to the Developer / Local Server tab and select that model.\n"
             "  3. Click 'Start Server' (serves on http://localhost:1234).")
+    else:
+        console.print(
+            "\n[dim]All agents are cloud-based — you do NOT need LM Studio.[/dim]")
     console.print("\nNow run: [bold]python -m mediator ping[/bold] to verify the connection.")
